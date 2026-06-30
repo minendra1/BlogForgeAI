@@ -2,7 +2,7 @@ import os
 import asyncio
 import json
 import jwt
-import traceback
+import logging
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.responses import StreamingResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -17,6 +17,13 @@ from agent.graph import app as agent_workflow
 
 load_dotenv()
 
+# Configure standard logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger("blogforge")
+
 # FIX 2: Name the FastAPI instance 'app' (This is what Uvicorn looks for by default!)
 app = FastAPI(title="BlogForgeAI Orchestration API")
 
@@ -25,7 +32,7 @@ os.makedirs("images", exist_ok=True)
 app.mount("/images", StaticFiles(directory="images"), name="images")
 
 # CORS Middleware (configurable via env for production)
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174").split(",")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[origin.strip() for origin in CORS_ORIGINS],
@@ -95,7 +102,7 @@ async def generate_blog(request: BlogRequest, user_id: str = Depends(verify_toke
             "image_specs": final_output.get("image_specs", [])
         }
     except Exception as e:
-        traceback.print_exc()
+        logger.exception("Failed to generate blog via standard endpoint:")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- STREAMING ENDPOINT (Real-time progress via SSE) ---
@@ -179,7 +186,7 @@ async def generate_blog_stream(request: BlogRequest, user_id: str = Depends(veri
                 queue.put(json.dumps({"type": "complete", "data": result})), loop
             )
         except Exception as e:
-            traceback.print_exc()
+            logger.exception("Pipeline crashed during streaming generation:")
             asyncio.run_coroutine_threadsafe(
                 queue.put(json.dumps({"type": "error", "message": str(e)})), loop
             )
