@@ -1,9 +1,12 @@
-import { Download, Printer } from "lucide-react";
+import { useState } from "react";
+import { Download, Printer, Copy, Check } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import vscDarkPlus from 'react-syntax-highlighter/dist/cjs/styles/prism/vsc-dark-plus';
 
 export default function BlogOutput({ result }) {
+    const [copied, setCopied] = useState(false);
+
     if (!result) return null;
 
     // 1. Markdown Download Handler
@@ -28,6 +31,17 @@ export default function BlogOutput({ result }) {
         window.print();
     };
 
+    // 3. Copy to Clipboard Handler
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(result.markdown);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error("Failed to copy text: ", err);
+        }
+    };
+
     return (
         <div className="w-full bg-white dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-800/50 p-6 sm:p-10 shadow-sm relative overflow-hidden print:shadow-none print:border-none print:p-0 print:bg-transparent">
             
@@ -42,6 +56,15 @@ export default function BlogOutput({ result }) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleCopy}
+                        className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium border border-slate-200 dark:border-slate-700"
+                        title="Copy Markdown"
+                    >
+                        {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                        <span className="hidden sm:inline">{copied ? "Copied!" : "Copy"}</span>
+                    </button>
+
                     <button
                         onClick={handlePrint}
                         className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium border border-slate-200 dark:border-slate-700"

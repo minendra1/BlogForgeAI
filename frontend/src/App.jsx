@@ -166,9 +166,26 @@ export default function App() {
                     <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-6 transform rotate-3">
                       <Sparkles size={32} />
                     </div>
-                    <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-4 text-slate-900 dark:text-white">
+                    <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-6 text-slate-900 dark:text-white">
                       What are we writing today?
                     </h2>
+                    
+                    <div className="flex flex-wrap justify-center gap-2 max-w-xl mx-auto">
+                      {[
+                        "How Agentic AI differs from standard LLMs", 
+                        "Beginner's guide to Vite vs Webpack", 
+                        "The future of React Server Components",
+                        "Building robust microservices in Python"
+                      ].map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          onClick={() => setTopic(suggestion)}
+                          className="text-xs sm:text-sm px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700/60 bg-white/50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 dark:hover:border-blue-800/50 transition-colors"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
