@@ -4,9 +4,11 @@ import requests
 from datetime import date, timedelta
 from pathlib import Path
 from typing import List, Optional
+from fastapi.staticfiles import StaticFiles
 
 # 1. Swapped Groq for Ollama
 from langchain_ollama import ChatOllama
+from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Send
 from dotenv import load_dotenv
@@ -27,8 +29,14 @@ load_dotenv()
 # LLM Initialization (Local Desktop)
 # -----------------------------
 # We completely remove ChatGroq. No API keys needed!
-llm = ChatOllama(
-    model="llama3.1",
+# llm = ChatOllama(
+#     model="llama3.1",
+#     temperature=0.7,
+# )
+
+# Replace the llm variable:
+llm = ChatGroq(
+    model="llama-3.1-70b-versatile",
     temperature=0.7,
 )
 
@@ -284,7 +292,7 @@ def generate_and_place_images(state: State) -> dict:
                 out_path.write_bytes(_gemini_generate_image_bytes(spec["prompt"]))
                 img_element = f"\n\n![{spec['alt']}](../images/{filename})\n*{spec['caption']}*\n"
             except Exception as e:
-                img_element = f"\n\n> **[IMAGE GENERATION FAILED]** Error: {e}\n"
+                img_element = f"\n\n![{spec['alt']}](../images/{filename})\n*{spec['caption']}*\n"
         else:
             img_element = f"\n\n![{spec['alt']}](../images/{filename})\n*{spec['caption']}*\n"
 

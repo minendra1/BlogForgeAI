@@ -1,18 +1,30 @@
-from fastapi import FastAPI, HTTPException
+import os
+import jwt
+from fastapi import FastAPI, HTTPException, Depends, Security
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import date
+from dotenv import load_dotenv
+from fastapi.staticfiles import StaticFiles
 
-# Import the compiled LangGraph agent from your new modular architecture
+# Import the compiled LangGraph agent
 from agent.graph import app
 
-# Initialize the production FastAPI app
+load_dotenv()
+
 app_api = FastAPI(title="BlogForgeAI Orchestration API")
 
-# Configure CORS for the future React frontend
+os.makedirs("images", exist_ok=True)
+app_api.mount("/images", StaticFiles(directory="images"), name="images")
+
+# Updated CORS Middleware to include both localhost and 127.0.0.1
 app_api.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"], 
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+    ], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -21,10 +33,38 @@ app_api.add_middleware(
 class BlogRequest(BaseModel):
     topic: str
 
-@app_api.post("/api/generate")
-async def generate_blog(request: BlogRequest):
+# --- AUTHENTICATION SETUP ---
+security = HTTPBearer()
+CLERK_PUBLIC_KEY = os.getenv("CLERK_PEM_PUBLIC_KEY")
+
+def verify_token(credentials: HTTPAuthorizationCredentials = Security(security)):
+    """
+    Decodes the Clerk JWT using the PEM Public Key.
+    Returns the user_id if valid, or raises a 401 Unauthorized.
+    """
+    if not CLERK_PUBLIC_KEY:
+        raise HTTPException(status_code=500, detail="Server missing Clerk Public Key.")
+        
+    token = credentials.credentials
     try:
-        # 1. Setup the initial state payload
+        payload = jwt.decode(
+            token, 
+            CLERK_PUBLIC_KEY, 
+            algorithms=["RS256"]
+        )
+        return payload.get("sub") # The Clerk user ID
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token has expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid authentication token")
+
+# --- ENDPOINTS ---
+
+# The Depends(verify_token) parameter locks down this endpoint
+@app_api.post("/api/generate")
+async def generate_blog(request: BlogRequest, user_id: str = Depends(verify_token)):
+    try:
+        # Setup the initial state payload
         initial_state = {
             "topic": request.topic,
             "as_of": str(date.today()),
@@ -41,10 +81,9 @@ async def generate_blog(request: BlogRequest):
             "final": ""
         }
         
-        # 2. Execute the modular LangGraph agent
+        # Execute the modular LangGraph agent
         final_output = app.invoke(initial_state)
         
-        # 3. Return the processed blog data to the client
         return {
             "status": "success",
             "title": final_output.get("plan").blog_title if final_output.get("plan") else request.topic,
