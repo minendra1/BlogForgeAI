@@ -1,11 +1,11 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { SignedIn, SignedOut, SignInButton, useAuth } from "@clerk/clerk-react";
 import { Sparkles, Loader2, Terminal, X, Globe, PenTool, Zap } from "lucide-react";
 
 // Modular Hooks & Services
 import { useTheme } from './hooks/useTheme';
 import { useHistory } from './hooks/useHistory';
-import { generateBlog } from './services/api';
+import { generateBlogStream } from './services/api';
 
 // Modular Components
 import Sidebar from './components/layout/Sidebar';
@@ -27,34 +27,8 @@ export default function App() {
   const [blogResult, setBlogResult] = useState(null);
   const [error, setError] = useState(null);
   
-  // Dynamic Loading State
-  const [loadingStep, setLoadingStep] = useState(0);
-
-  const loadingMessages = [
-    "Initializing agent workflow...",
-    "Planning blog structure...",
-    "Researching live web sources...",
-    "Analyzing data and citations...",
-    "Drafting blog sections...",
-    "Generating visual assets...",
-    "Refining final markdown..."
-  ];
-
-  // Timer to cycle through loading messages
-  useEffect(() => {
-    let interval;
-    if (isLoading) {
-      setLoadingStep(0); // Reset to first message
-      interval = setInterval(() => {
-        setLoadingStep((prev) => {
-          // Stop at the last message if generation takes a long time
-          if (prev === loadingMessages.length - 1) return prev;
-          return prev + 1;
-        });
-      }, 4500); // Change message every 4.5 seconds
-    }
-    return () => clearInterval(interval);
-  }, [isLoading]);
+  // Dynamic Loading State (driven by real-time SSE events from the backend)
+  const [loadingProgress, setLoadingProgress] = useState(null);
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -66,12 +40,15 @@ export default function App() {
     setIsLoading(true);
     setError(null);
     setBlogResult(null);
+    setLoadingProgress({ step: 0, total: 7, message: "Initializing agent workflow..." });
 
     try {
       const token = await getToken();
       if (!token) throw new Error("Authentication error. Please sign in again.");
 
-      const data = await generateBlog(currentTopic, token);
+      const data = await generateBlogStream(currentTopic, token, (progress) => {
+        setLoadingProgress(progress);
+      });
       
       setBlogResult(data);
       addToHistory(currentTopic, data);
@@ -80,6 +57,7 @@ export default function App() {
       setTopic(currentTopic); 
     } finally {
       setIsLoading(false);
+      setLoadingProgress(null);
     }
   };
 
@@ -193,24 +171,24 @@ export default function App() {
                     
                     <div className="h-8 overflow-hidden relative w-full max-w-sm flex justify-center">
                       <p 
-                        key={loadingStep} 
+                        key={loadingProgress?.step} 
                         className="text-base font-semibold text-slate-700 dark:text-slate-300 animate-in slide-in-from-bottom-4 fade-in duration-500"
                       >
-                        {loadingMessages[loadingStep]}
+                        {loadingProgress?.message || "Initializing agent workflow..."}
                       </p>
                     </div>
                     
-                    {/* Animated progress dots */}
+                    {/* Animated progress dots — driven by real SSE events */}
                     <div className="flex gap-1.5 mt-4">
-                      {loadingMessages.map((_, idx) => (
+                      {Array.from({ length: loadingProgress?.total || 7 }, (_, idx) => (
                         <div 
                           key={idx} 
                           className={`h-1.5 rounded-full transition-all duration-500 ${
-                            idx === loadingStep 
-                              ? "w-6 bg-blue-500" 
-                              : idx < loadingStep 
-                                ? "w-1.5 bg-blue-500/40" 
-                                : "w-1.5 bg-slate-200 dark:bg-slate-700"
+                            idx + 1 <= Math.floor(loadingProgress?.step || 0)
+                              ? idx + 1 === Math.floor(loadingProgress?.step || 0)
+                                ? "w-6 bg-blue-500"
+                                : "w-1.5 bg-blue-500/40"
+                              : "w-1.5 bg-slate-200 dark:bg-slate-700"
                           }`}
                         />
                       ))}
