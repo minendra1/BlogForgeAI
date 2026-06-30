@@ -9,19 +9,20 @@ from datetime import date
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
 
-
-# Import the compiled LangGraph agent
-from agent.graph import app
+# FIX 1: Rename the LangGraph import to avoid conflict with FastAPI
+from agent.graph import app as agent_workflow
 
 load_dotenv()
 
-app_api = FastAPI(title="BlogForgeAI Orchestration API")
+# FIX 2: Name the FastAPI instance 'app' (This is what Uvicorn looks for by default!)
+app = FastAPI(title="BlogForgeAI Orchestration API")
 
+# Mount the images directory so the React frontend can see them
 os.makedirs("images", exist_ok=True)
-app_api.mount("/images", StaticFiles(directory="images"), name="images")
+app.mount("/images", StaticFiles(directory="images"), name="images")
 
-# Updated CORS Middleware to include both localhost and 127.0.0.1
-app_api.add_middleware(
+# CORS Middleware
+app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:5173",
@@ -63,7 +64,7 @@ def verify_token(credentials: HTTPAuthorizationCredentials = Security(security))
 # --- ENDPOINTS ---
 
 # The Depends(verify_token) parameter locks down this endpoint
-@app_api.post("/api/generate")
+@app.post("/api/generate")
 async def generate_blog(request: BlogRequest, user_id: str = Depends(verify_token)):
     try:
         # Setup the initial state payload
@@ -83,8 +84,8 @@ async def generate_blog(request: BlogRequest, user_id: str = Depends(verify_toke
             "final": ""
         }
         
-        # Execute the modular LangGraph agent
-        final_output = app.invoke(initial_state)
+        # FIX 3: Execute the LangGraph agent using the new name
+        final_output = agent_workflow.invoke(initial_state)
         
         return {
             "status": "success",
@@ -93,9 +94,9 @@ async def generate_blog(request: BlogRequest, user_id: str = Depends(verify_toke
             "image_specs": final_output.get("image_specs", [])
         }
     except Exception as e:
-        traceback.print_exc()  # <--- ADD THIS LINE
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app_api, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
