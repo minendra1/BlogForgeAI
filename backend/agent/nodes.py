@@ -1,15 +1,21 @@
 import os
 import re
+import requests
 from datetime import date, timedelta
 from pathlib import Path
 from typing import List, Optional
 
-from langchain_groq import ChatGroq
+# 1. Swapped Groq for Ollama
+from langchain_ollama import ChatOllama
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Send
 from dotenv import load_dotenv
+from langchain_community.tools.tavily_search import TavilySearchResults
 
-# Import the schemas and state we just created
+import urllib.request
+import urllib.parse
+
+# Import the schemas and state
 from agent.state import (
     State, Task, Plan, EvidenceItem, RouterDecision, 
     EvidencePack, GlobalImagePlan
@@ -18,14 +24,12 @@ from agent.state import (
 load_dotenv()
 
 # -----------------------------
-# LLM Initialization
+# LLM Initialization (Local Desktop)
 # -----------------------------
-
-
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
+# We completely remove ChatGroq. No API keys needed!
+llm = ChatOllama(
+    model="llama3.1",
     temperature=0.7,
-    max_retries=2
 )
 
 # -----------------------------
@@ -45,7 +49,8 @@ If needs_research=true:
 """
 
 def router_node(state: State) -> dict:
-    decider = llm.with_structured_output(RouterDecision)
+    # 2. Upgraded to method="json_schema" to physically lock the output structure
+    decider = llm.with_structured_output(RouterDecision, method="json_schema")
     decision = decider.invoke([
         SystemMessage(content=ROUTER_SYSTEM),
         HumanMessage(content=f"Topic: {state['topic']}\nAs-of date: {state['as_of']}"),
@@ -75,7 +80,7 @@ def _tavily_search(query: str, max_results: int = 5) -> List[dict]:
     if not os.getenv("TAVILY_API_KEY"):
         return []
     try:
-        from langchain_community.tools.tavily_search import TavilySearchResults
+        from langchain_tavily import TavilySearchResults
         tool = TavilySearchResults(max_results=max_results)
         results = tool.invoke({"query": query})
         out: List[dict] = []
@@ -115,7 +120,8 @@ def research_node(state: State) -> dict:
     if not raw:
         return {"evidence": []}
 
-    extractor = llm.with_structured_output(EvidencePack)
+    # Upgraded to method="json_schema"
+    extractor = llm.with_structured_output(EvidencePack, method="json_schema")
     pack = extractor.invoke([
         SystemMessage(content=RESEARCH_SYSTEM),
         HumanMessage(content=f"As-of date: {state['as_of']}\nRecency days: {state['recency_days']}\n\nRaw results:\n{raw}"),
@@ -137,17 +143,17 @@ def research_node(state: State) -> dict:
 ORCH_SYSTEM = """You are a senior technical writer and developer advocate.
 Produce a highly actionable outline for a technical blog post.
 Requirements:
-- 5–9 tasks, each with goal + 3–6 bullets + target_words.
+- 3-4 tasks, each with goal + 3-6 bullets + target_words.
 - Tags are flexible; do not force a fixed taxonomy.
 Grounding:
 - closed_book: evergreen, no evidence dependence.
 - hybrid: use evidence for up-to-date examples; mark those tasks requires_research=True and requires_citations=True.
 - open_book: weekly/news roundup (Set blog_kind="news_roundup").
-Output must match Plan schema.
 """
 
 def orchestrator_node(state: State) -> dict:
-    planner = llm.with_structured_output(Plan)
+    # Upgraded to method="json_schema"
+    planner = llm.with_structured_output(Plan, method="json_schema")
     mode = state.get("mode", "closed_book")
     evidence = state.get("evidence", [])
     forced_kind = "news_roundup" if mode == "open_book" else None
@@ -210,60 +216,82 @@ def merge_content(state: State) -> dict:
     return {"merged_md": f"# {plan.blog_title}\n\n" + "\n\n".join(ordered_sections).strip() + "\n"}
 
 DECIDE_IMAGES_SYSTEM = """You are an expert technical editor.
-Decide if images/diagrams are needed for THIS blog.
-Rules: Max 3 images total. Insert placeholders exactly: [[IMAGE_1]], [[IMAGE_2]], [[IMAGE_3]].
-Return strictly GlobalImagePlan.
+Analyze the provided blog post content and decide where images or diagrams are needed to explain concepts better.
+Rules:
+- Select a maximum of 3 images total.
+- For each image, specify the exact heading string (e.g., "## AI Applications in India") after which the image should be placed.
+- Provide descriptive prompts for generating clean, clear visual graphics.
 """
 
 def decide_images(state: State) -> dict:
-    planner = llm.with_structured_output(GlobalImagePlan)
+    # Upgraded to method="json_schema"
+    planner = llm.with_structured_output(GlobalImagePlan, method="json_schema")
     image_plan = planner.invoke([
         SystemMessage(content=DECIDE_IMAGES_SYSTEM),
-        HumanMessage(content=f"Blog kind: {state['plan'].blog_kind}\nTopic: {state['topic']}\n\n{state['merged_md']}"),
+        HumanMessage(content=f"Blog kind: {state['plan'].blog_kind}\nTopic: {state['topic']}\n\nContent:\n{state['merged_md']}"),
     ])
     return {
-        "md_with_placeholders": image_plan.md_with_placeholders,
         "image_specs": [img.model_dump() for img in image_plan.images],
     }
 
 def _gemini_generate_image_bytes(prompt: str) -> bytes:
-    from google import genai
-    from google.genai import types
-    client = genai.Client(api_key=os.environ.get("GOOGLE_API_KEY"))
-    resp = client.models.generate_content(
-        model="gemini-2.5-flash-image", contents=prompt,
-        config=types.GenerateContentConfig(
-            response_modalities=["IMAGE"],
-            safety_settings=[types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="BLOCK_ONLY_HIGH")]
-        ),
-    )
-    parts = getattr(resp, "parts", None) or resp.candidates[0].content.parts
-    return parts[0].inline_data.data
+    """
+    Drop-in replacement: Uses Pollinations.ai to bypass Hugging Face network blocks.
+    No API key required.
+    """
+    safe_prompt = urllib.parse.quote(prompt)
+    url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=1024&nologo=true"
+    
+    req = urllib.request.Request(url, headers={'User-Agent': 'BlogForgeAI/1.0'})
+    with urllib.request.urlopen(req) as response:
+        return response.read()
 
 def _safe_slug(title: str) -> str:
     s = re.sub(r"[^a-z0-9 _-]+", "", title.strip().lower())
     return re.sub(r"\s+", "_", s).strip("_") or "blog"
 
 def generate_and_place_images(state: State) -> dict:
-    md = state.get("md_with_placeholders") or state["merged_md"]
+    md = state["merged_md"]
     image_specs = state.get("image_specs", []) or []
+    
+    # Create a dedicated folder for the markdown blogs
+    blogs_dir = Path("blogs")
+    blogs_dir.mkdir(exist_ok=True)
+    
+    # Define the final file path inside the new folder
+    final_filename = f"{_safe_slug(state['plan'].blog_title)}.md"
+    final_path = blogs_dir / final_filename
 
+    # If no images were planned, save and exit
     if not image_specs:
-        Path(f"{_safe_slug(state['plan'].blog_title)}.md").write_text(md, encoding="utf-8")
+        final_path.write_text(md, encoding="utf-8")
         return {"final": md}
 
     images_dir = Path("images")
     images_dir.mkdir(exist_ok=True)
 
     for spec in image_specs:
-        out_path = images_dir / spec["filename"]
+        filename = spec["filename"]
+        out_path = images_dir / filename
+        
+        # Download/Generate image bytes if it doesn't exist
         if not out_path.exists():
             try:
                 out_path.write_bytes(_gemini_generate_image_bytes(spec["prompt"]))
+                img_element = f"\n\n![{spec['alt']}](../images/{filename})\n*{spec['caption']}*\n"
             except Exception as e:
-                md = md.replace(spec["placeholder"], f"> **[IMAGE FAILED]** Error: {e}\n")
-                continue
-        md = md.replace(spec["placeholder"], f"![{spec['alt']}](images/{spec['filename']})\n*{spec['caption']}*")
+                img_element = f"\n\n> **[IMAGE GENERATION FAILED]** Error: {e}\n"
+        else:
+            img_element = f"\n\n![{spec['alt']}](../images/{filename})\n*{spec['caption']}*\n"
 
-    Path(f"{_safe_slug(state['plan'].blog_title)}.md").write_text(md, encoding="utf-8")
+        # Safe replacement logic
+        heading = spec.get("insert_after_heading", "")
+        if heading and heading in md:
+            md = md.replace(heading, f"{heading}{img_element}", 1)
+        else:
+            md += f"\n\n{img_element}"
+
+    # Save finalized file to the blogs/ directory
+    final_path.write_text(md, encoding="utf-8")
+    
     return {"final": md}
