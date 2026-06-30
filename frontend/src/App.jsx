@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { SignedIn, SignedOut, SignInButton, useAuth } from "@clerk/clerk-react";
 import { Sparkles, Loader2, Terminal, X, Globe, PenTool, Zap } from "lucide-react";
 
@@ -14,11 +14,14 @@ import BlogOutput from './components/workspace/BlogOutput';
 
 export default function App() {
   const [darkMode, setDarkMode] = useTheme();
-  const { history, addToHistory } = useHistory();
-  const { getToken } = useAuth();
   
-  // Start sidebar open on desktop, closed on mobile
-  const [sidebarOpen, setSidebarOpen] = useState(window.innerWidth >= 768);
+  // Grab BOTH getToken and userId from Clerk
+  const { getToken, userId } = useAuth();
+  
+  // Pass the userId into your hook so history is private to the logged-in user
+  const { history, addToHistory } = useHistory(userId);
+  
+  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [topic, setTopic] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [blogResult, setBlogResult] = useState(null);
@@ -29,7 +32,7 @@ export default function App() {
     if (!topic.trim()) return;
 
     const currentTopic = topic;
-    setTopic(""); // Clear input immediately for better UX
+    setTopic(""); 
     
     setIsLoading(true);
     setError(null);
@@ -45,14 +48,15 @@ export default function App() {
       addToHistory(currentTopic, data);
     } catch (err) {
       setError(err.message);
-      setTopic(currentTopic); // Restore the text if there was an error so they don't lose it
+      setTopic(currentTopic); 
     } finally {
       setIsLoading(false);
     }
   };
 
   const loadHistoryItem = (item) => {
-    setBlogResult(item);
+    // FIX: Set the result to item.data, which contains the actual markdown and images!
+    setBlogResult(item.data);
     setTopic(item.topic);
     if (window.innerWidth < 768) setSidebarOpen(false);
   };
@@ -62,13 +66,6 @@ export default function App() {
     setTopic("");
     if (window.innerWidth < 768) setSidebarOpen(false);
   };
-
-  // Ensure sidebar responsiveness on window resize
-  useEffect(() => {
-    const handleResize = () => setSidebarOpen(window.innerWidth >= 768);
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
 
   return (
     <>
@@ -123,27 +120,32 @@ export default function App() {
       <SignedIn>
         <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-slate-900/80 dark:to-slate-950 selection:bg-blue-500 selection:text-white transition-colors duration-300">
           
-          <Sidebar 
-            isOpen={sidebarOpen} 
-            setIsOpen={setSidebarOpen} 
-            history={history} 
-            onLoadItem={loadHistoryItem} 
-            onNew={startNewGeneration} 
-          />
+          <div className="print:hidden flex shrink-0">
+            <Sidebar 
+              isOpen={sidebarOpen} 
+              setIsOpen={setSidebarOpen} 
+              history={history} 
+              onLoadItem={loadHistoryItem} 
+              onNew={startNewGeneration} 
+            />
+          </div>
 
           <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
-            <Navbar 
-              darkMode={darkMode} 
-              setDarkMode={setDarkMode} 
-              setSidebarOpen={setSidebarOpen} 
-              hasResult={!!blogResult} 
-            />
+            <div className="print:hidden">
+              <Navbar 
+                darkMode={darkMode} 
+                setDarkMode={setDarkMode} 
+                sidebarOpen={sidebarOpen}
+                setSidebarOpen={setSidebarOpen} 
+                hasResult={!!blogResult} 
+              />
+            </div>
 
-            <main className="flex-1 overflow-y-auto px-4 pb-4 sm:px-8 sm:pb-8 pt-0">
-              <div className="max-w-4xl mx-auto w-full pb-32 mt-4 sm:mt-8 relative">
+            <main className="flex-1 overflow-y-auto px-4 pb-4 sm:px-8 sm:pb-8 pt-0 print:overflow-visible print:px-0">
+              <div className="max-w-4xl mx-auto w-full pb-32 mt-4 sm:mt-8 relative print:pb-0 print:mt-0">
                 
                 {!blogResult && !isLoading && (
-                  <div className="text-center max-w-2xl mx-auto mb-10 mt-10 animate-in fade-in duration-700">
+                  <div className="text-center max-w-2xl mx-auto mb-10 mt-10 animate-in fade-in duration-700 print:hidden">
                     <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-6 transform rotate-3">
                       <Sparkles size={32} />
                     </div>
@@ -154,14 +156,14 @@ export default function App() {
                 )}
 
                 {isLoading && (
-                  <div className="w-full bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm rounded-2xl border border-slate-200/50 dark:border-slate-800/50 p-12 text-center animate-pulse mt-8">
+                  <div className="w-full bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm rounded-2xl border border-slate-200/50 dark:border-slate-800/50 p-12 text-center animate-pulse mt-8 print:hidden">
                     <Terminal className="w-10 h-10 mx-auto text-blue-500 mb-4 animate-bounce" />
                     <p className="text-base font-semibold text-slate-700 dark:text-slate-300">Agents are orchestrating...</p>
                   </div>
                 )}
 
                 {error && (
-                  <div className="w-full bg-red-50/80 dark:bg-red-950/30 backdrop-blur-md text-red-600 dark:text-red-400 p-4 rounded-xl border border-red-200 dark:border-red-900/50 text-sm flex items-start gap-3 mt-8">
+                  <div className="w-full bg-red-50/80 dark:bg-red-950/30 backdrop-blur-md text-red-600 dark:text-red-400 p-4 rounded-xl border border-red-200 dark:border-red-900/50 text-sm flex items-start gap-3 mt-8 print:hidden">
                     <X size={18} className="mt-0.5 shrink-0" />
                     <div><span className="font-semibold block mb-1">Execution Error</span>{error}</div>
                   </div>
@@ -171,7 +173,8 @@ export default function App() {
               </div>
             </main>
 
-            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] max-w-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-2xl p-2 z-50">
+            {/* Input Bar - Added print:hidden so it doesn't appear on exported PDFs */}
+            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] max-w-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-2xl p-2 z-50 print:hidden">
               <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-2">
                 <input
                   type="text"

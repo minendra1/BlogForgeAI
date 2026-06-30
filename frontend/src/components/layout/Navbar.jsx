@@ -1,18 +1,35 @@
 import { SignedIn, SignedOut, SignInButton, UserButton } from "@clerk/clerk-react";
-import { Sun, Moon, Menu } from "lucide-react";
+import { Sun, Moon, Menu, Sparkles } from "lucide-react";
 
-export default function Navbar({ darkMode, setDarkMode, setSidebarOpen, hasResult }) {
+export default function Navbar({ darkMode, setDarkMode, sidebarOpen, setSidebarOpen, hasResult }) {
   return (
     <nav className="h-16 shrink-0 border-b border-slate-200/50 dark:border-slate-800/50 bg-white/50 dark:bg-slate-950/50 backdrop-blur-md flex items-center justify-between px-4 sm:px-6 z-10 sticky top-0">
       
       <div className="flex items-center gap-3">
-        {/* Removed md:hidden so it works on desktop! Also added toggle logic prev => !prev */}
-        <button 
-          className="p-2 -ml-2 rounded-xl text-slate-600 hover:bg-slate-200/50 dark:text-slate-300 dark:hover:bg-slate-800/50 transition-colors"
-          onClick={() => setSidebarOpen(prev => !prev)}
-        >
-          <Menu size={20} />
-        </button>
+        
+        {/* Only show Navbar hamburger when Sidebar is CLOSED */}
+        {!sidebarOpen && (
+          <button 
+            className="p-2 -ml-2 rounded-xl text-slate-600 hover:bg-slate-200/50 dark:text-slate-300 dark:hover:bg-slate-800/50 transition-colors"
+            onClick={() => setSidebarOpen(true)}
+          >
+            <Menu size={20} />
+          </button>
+        )}
+        
+        {/* Only show Navbar Logo when Sidebar is CLOSED */}
+        {!sidebarOpen && (
+          <div className="hidden md:flex items-center gap-2 mr-2 animate-in fade-in slide-in-from-left-4 duration-300">
+            <div className="bg-gradient-to-tr from-blue-600 to-indigo-600 p-1 rounded-md text-white shadow-sm shadow-blue-500/20">
+              <Sparkles size={14} />
+            </div>
+            <span className="font-bold tracking-tight text-slate-900 dark:text-white">
+              BlogForgeAI
+            </span>
+            <div className="w-px h-4 bg-slate-300 dark:bg-slate-700 ml-2"></div>
+          </div>
+        )}
+
         <span className="font-medium text-slate-700 dark:text-slate-200 hidden sm:block">
           {hasResult ? "Viewing Document" : "Agent Workspace"}
         </span>

@@ -9,6 +9,7 @@ from datetime import date
 from dotenv import load_dotenv
 from fastapi.staticfiles import StaticFiles
 
+
 # Import the compiled LangGraph agent
 from agent.graph import app
 

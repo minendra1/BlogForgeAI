@@ -1,25 +1,49 @@
 import { useState, useEffect } from 'react';
 
-export function useHistory() {
-  const [history, setHistory] = useState(() => {
-    const saved = localStorage.getItem('blogHistory');
-    return saved ? JSON.parse(saved) : [];
-  });
+export function useHistory(userId) {
+  const [history, setHistory] = useState([]);
 
+  // Load history whenever the userId changes
   useEffect(() => {
-    localStorage.setItem('blogHistory', JSON.stringify(history));
-  }, [history]);
+    // If no one is logged in, clear the history state immediately
+    if (!userId) {
+      setHistory([]);
+      return;
+    }
+
+    // Fetch this specific user's private history
+    const storageKey = `blog_history_${userId}`;
+    const saved = localStorage.getItem(storageKey);
+    
+    if (saved) {
+      try {
+        setHistory(JSON.parse(saved));
+      } catch (e) {
+        setHistory([]);
+      }
+    } else {
+      setHistory([]);
+    }
+  }, [userId]);
 
   const addToHistory = (topic, data) => {
-    const newItem = {
-      id: Date.now().toString(),
-      topic,
-      title: data.title,
-      markdown: data.markdown,
-      image_specs: data.image_specs,
-      date: new Date().toLocaleDateString()
-    };
-    setHistory(prev => [newItem, ...prev].slice(0, 20)); // Keep last 20
+    if (!userId) return; // Don't save if not logged in
+    
+    setHistory(prev => {
+      // Create the new item (adjust if your data structure is slightly different)
+      const newItem = { 
+        id: Date.now(), 
+        topic: topic, 
+        title: data.title || topic,
+        data: data 
+      };
+      
+      const updatedHistory = [newItem, ...prev];
+      
+      // Save it uniquely for this user
+      localStorage.setItem(`blog_history_${userId}`, JSON.stringify(updatedHistory));
+      return updatedHistory;
+    });
   };
 
   return { history, addToHistory };
