@@ -1,5 +1,6 @@
 import os
 import jwt
+import traceback
 from fastapi import FastAPI, HTTPException, Depends, Security
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.middleware.cors import CORSMiddleware
@@ -91,6 +92,7 @@ async def generate_blog(request: BlogRequest, user_id: str = Depends(verify_toke
             "image_specs": final_output.get("image_specs", [])
         }
     except Exception as e:
+        traceback.print_exc()  # <--- ADD THIS LINE
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":

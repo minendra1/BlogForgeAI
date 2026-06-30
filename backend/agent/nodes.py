@@ -6,8 +6,6 @@ from pathlib import Path
 from typing import List, Optional
 from fastapi.staticfiles import StaticFiles
 
-# 1. Swapped Groq for Ollama
-from langchain_ollama import ChatOllama
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Send
@@ -26,17 +24,10 @@ from agent.state import (
 load_dotenv()
 
 # -----------------------------
-# LLM Initialization (Local Desktop)
+# LLM Initialization (Groq Mixtral)
 # -----------------------------
-# We completely remove ChatGroq. No API keys needed!
-# llm = ChatOllama(
-#     model="llama3.1",
-#     temperature=0.7,
-# )
-
-# Replace the llm variable:
 llm = ChatGroq(
-    model="llama-3.1-70b-versatile",
+    model="llama-3.3-70b-versatile",
     temperature=0.7,
 )
 
@@ -57,8 +48,8 @@ If needs_research=true:
 """
 
 def router_node(state: State) -> dict:
-    # 2. Upgraded to method="json_schema" to physically lock the output structure
-    decider = llm.with_structured_output(RouterDecision, method="json_schema")
+    # Removed method="json_schema" to support Mixtral native tool calling
+    decider = llm.with_structured_output(RouterDecision)
     decision = decider.invoke([
         SystemMessage(content=ROUTER_SYSTEM),
         HumanMessage(content=f"Topic: {state['topic']}\nAs-of date: {state['as_of']}"),
@@ -88,7 +79,6 @@ def _tavily_search(query: str, max_results: int = 5) -> List[dict]:
     if not os.getenv("TAVILY_API_KEY"):
         return []
     try:
-        # Modern import that removes the deprecation warning
         from langchain_tavily import TavilySearchResults
         
         tool = TavilySearchResults(max_results=max_results)
@@ -130,8 +120,8 @@ def research_node(state: State) -> dict:
     if not raw:
         return {"evidence": []}
 
-    # Upgraded to method="json_schema"
-    extractor = llm.with_structured_output(EvidencePack, method="json_schema")
+    # Removed method="json_schema"
+    extractor = llm.with_structured_output(EvidencePack)
     pack = extractor.invoke([
         SystemMessage(content=RESEARCH_SYSTEM),
         HumanMessage(content=f"As-of date: {state['as_of']}\nRecency days: {state['recency_days']}\n\nRaw results:\n{raw}"),
@@ -162,8 +152,8 @@ Grounding:
 """
 
 def orchestrator_node(state: State) -> dict:
-    # Upgraded to method="json_schema"
-    planner = llm.with_structured_output(Plan, method="json_schema")
+    # Removed method="json_schema"
+    planner = llm.with_structured_output(Plan)
     mode = state.get("mode", "closed_book")
     evidence = state.get("evidence", [])
     forced_kind = "news_roundup" if mode == "open_book" else None
@@ -236,8 +226,8 @@ CRITICAL CONSTRAINTS:
 """
 
 def decide_images(state: State) -> dict:
-    # Upgraded to method="json_schema"
-    planner = llm.with_structured_output(GlobalImagePlan, method="json_schema")
+    # Removed method="json_schema"
+    planner = llm.with_structured_output(GlobalImagePlan)
     image_plan = planner.invoke([
         SystemMessage(content=DECIDE_IMAGES_SYSTEM),
         HumanMessage(content=f"Blog kind: {state['plan'].blog_kind}\nTopic: {state['topic']}\n\nContent:\n{state['merged_md']}"),
@@ -248,8 +238,7 @@ def decide_images(state: State) -> dict:
 
 def _gemini_generate_image_bytes(prompt: str) -> bytes:
     """
-    Drop-in replacement: Uses Pollinations.ai to bypass Hugging Face network blocks.
-    No API key required.
+    Uses Pollinations.ai to bypass Hugging Face network blocks. No API key required.
     """
     safe_prompt = urllib.parse.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=1024&nologo=true"
@@ -266,15 +255,12 @@ def generate_and_place_images(state: State) -> dict:
     md = state["merged_md"]
     image_specs = state.get("image_specs", []) or []
     
-    # Create a dedicated folder for the markdown blogs
     blogs_dir = Path("blogs")
     blogs_dir.mkdir(exist_ok=True)
     
-    # Define the final file path inside the new folder
     final_filename = f"{_safe_slug(state['plan'].blog_title)}.md"
     final_path = blogs_dir / final_filename
 
-    # If no images were planned, save and exit
     if not image_specs:
         final_path.write_text(md, encoding="utf-8")
         return {"final": md}
@@ -286,24 +272,22 @@ def generate_and_place_images(state: State) -> dict:
         filename = spec["filename"]
         out_path = images_dir / filename
         
-        # Download/Generate image bytes if it doesn't exist
+        # Updated image syntax to leverage absolute FastAPI static routing URL
         if not out_path.exists():
             try:
                 out_path.write_bytes(_gemini_generate_image_bytes(spec["prompt"]))
-                img_element = f"\n\n![{spec['alt']}](../images/{filename})\n*{spec['caption']}*\n"
+                img_element = f"\n\n![{spec['alt']}](http://localhost:8000/images/{filename})\n*{spec['caption']}*\n"
             except Exception as e:
-                img_element = f"\n\n![{spec['alt']}](../images/{filename})\n*{spec['caption']}*\n"
+                img_element = f"\n\n![{spec['alt']}](http://localhost:8000/images/{filename})\n*{spec['caption']}*\n"
         else:
-            img_element = f"\n\n![{spec['alt']}](../images/{filename})\n*{spec['caption']}*\n"
+            img_element = f"\n\n![{spec['alt']}](http://localhost:8000/images/{filename})\n*{spec['caption']}*\n"
 
-        # Safe replacement logic
         heading = spec.get("insert_after_heading", "")
         if heading and heading in md:
             md = md.replace(heading, f"{heading}{img_element}", 1)
         else:
             md += f"\n\n{img_element}"
 
-    # Save finalized file to the blogs/ directory
     final_path.write_text(md, encoding="utf-8")
     
     return {"final": md}
