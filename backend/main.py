@@ -1,4 +1,5 @@
 import os
+import asyncio
 import jwt
 import traceback
 from fastapi import FastAPI, HTTPException, Depends, Security
@@ -85,7 +86,7 @@ async def generate_blog(request: BlogRequest, user_id: str = Depends(verify_toke
         }
         
         # FIX 3: Execute the LangGraph agent using the new name
-        final_output = agent_workflow.invoke(initial_state)
+        final_output = await asyncio.to_thread(agent_workflow.invoke, initial_state)
         
         return {
             "status": "success",
