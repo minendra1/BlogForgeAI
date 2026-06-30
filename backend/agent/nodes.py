@@ -80,7 +80,9 @@ def _tavily_search(query: str, max_results: int = 5) -> List[dict]:
     if not os.getenv("TAVILY_API_KEY"):
         return []
     try:
+        # Modern import that removes the deprecation warning
         from langchain_tavily import TavilySearchResults
+        
         tool = TavilySearchResults(max_results=max_results)
         results = tool.invoke({"query": query})
         out: List[dict] = []
@@ -215,12 +217,14 @@ def merge_content(state: State) -> dict:
     ordered_sections = [md for _, md in sorted(state["sections"], key=lambda x: x[0])]
     return {"merged_md": f"# {plan.blog_title}\n\n" + "\n\n".join(ordered_sections).strip() + "\n"}
 
-DECIDE_IMAGES_SYSTEM = """You are an expert technical editor.
-Analyze the provided blog post content and decide where images or diagrams are needed to explain concepts better.
-Rules:
-- Select a maximum of 3 images total.
-- For each image, specify the exact heading string (e.g., "## AI Applications in India") after which the image should be placed.
-- Provide descriptive prompts for generating clean, clear visual graphics.
+# --- CRITICAL FIX APPLIED HERE ---
+DECIDE_IMAGES_SYSTEM = """You are an expert technical editor and graphic director.
+Analyze the provided blog post content and plan exact images or technical diagrams to explain the concepts better.
+
+CRITICAL CONSTRAINTS:
+1. You MUST plan exactly 2 to 3 images. Returning an empty list or skipping this task is strictly forbidden.
+2. For each image, choose an exact heading string present in the text (e.g., "## Challenges Faced by Indian Businesses in Adopting AI") to insert the image after.
+3. Provide high-quality, descriptive text prompts for generating clean visual graphics (do not use generic descriptions).
 """
 
 def decide_images(state: State) -> dict:
