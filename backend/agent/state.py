@@ -41,18 +41,18 @@ class RouterDecision(BaseModel):
 class EvidencePack(BaseModel):
     evidence: List[EvidenceItem] = Field(default_factory=list)
 
+# -----------------------------
+# Image & Reducer Schemas
+# -----------------------------
 class ImageSpec(BaseModel):
-    placeholder: str = Field(..., description="e.g. [[IMAGE_1]]")
-    filename: str = Field(..., description="Save under images/, e.g. qkv_flow.png")
-    alt: str
-    caption: str
-    prompt: str = Field(..., description="Prompt to send to the image model.")
-    size: Literal["1024x1024", "1024x1536", "1536x1024"] = "1024x1024"
-    quality: Literal["low", "medium", "high"] = "medium"
+    filename: str = Field(..., description="Unique filename, e.g., 'ai_healthcare.png'")
+    prompt: str = Field(..., description="Detailed visual prompt for generating the image.")
+    alt: str = Field(..., description="Alt text description.")
+    caption: str = Field(..., description="Caption text to show under the image.")
+    insert_after_heading: str = Field(..., description="The exact text of the heading (e.g., '## AI Applications in India') this image should follow.")
 
 class GlobalImagePlan(BaseModel):
-    md_with_placeholders: str
-    images: List[ImageSpec] = Field(default_factory=list)
+    images: List[ImageSpec] = Field(default_factory=list, description="List of planned images.")
 
 # -----------------------------
 # LangGraph Memory State
@@ -68,6 +68,6 @@ class State(TypedDict):
     recency_days: int
     sections: Annotated[List[tuple[int, str]], operator.add] 
     merged_md: str
-    md_with_placeholders: str
+    md_with_placeholders: str 
     image_specs: List[dict]
     final: str

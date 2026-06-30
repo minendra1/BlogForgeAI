@@ -1,0 +1,39 @@
+/* Import Tailwind v4 */
+@import "tailwindcss";
+
+/* Explicitly tell Tailwind v4 to use class-based dark mode (triggered by the .dark class on the <html> tag) */
+@custom-variant dark (&:is(.dark *));
+
+@layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 transition-colors duration-300 antialiased;
+  }
+  
+  /* Apply dark mode body styles */
+  .dark body {
+    @apply bg-slate-950 text-slate-100;
+  }
+}
+
+/* Custom scrollbar for a polished feel */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300;
+}
+.dark ::-webkit-scrollbar-thumb {
+  @apply bg-slate-800 hover:bg-slate-700;
+}
+
+/* Restrict the size of AI generated markdown images */
+main img {
+  max-width: 50%;
+  height: auto;
+  margin: 2rem auto; /* Centers the image and adds breathing room */
+  border-radius: 0.75rem; /* Keeps the edges looking modern */
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); /* Optional: adds a subtle shadow */
+}

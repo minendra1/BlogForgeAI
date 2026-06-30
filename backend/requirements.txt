@@ -1,0 +1,28 @@
+# ============================================
+# BlogForgeAI Backend — Python Dependencies
+# ============================================
+# Install with:  pip install -r requirements.txt
+# ============================================
+
+# --- Web Framework ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+
+# --- Data Validation ---
+pydantic>=2.0
+
+# --- Authentication ---
+PyJWT[crypto]>=2.8.0
+
+# --- Environment ---
+python-dotenv>=1.0.0
+
+# --- LLM / AI Agent ---
+langchain-groq>=0.3.0
+langchain-core>=0.3.0
+langchain-community>=0.3.0
+langchain-tavily>=0.1.0
+langgraph>=0.4.0
+
+# --- HTTP ---
+requests>=2.31.0
