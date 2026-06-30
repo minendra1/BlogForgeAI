@@ -24,6 +24,9 @@ load_dotenv()
 
 logger = logging.getLogger("blogforge.agent")
 
+# Base URL for serving static assets (images) — configurable for deployment
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+
 # -----------------------------
 # Retry Decorator for LLM Calls
 # -----------------------------
@@ -336,7 +339,7 @@ def generate_and_place_images(state: State) -> dict:
         if not out_path.exists():
             try:
                 out_path.write_bytes(_generate_image_bytes(spec["prompt"]))
-                img_element = f"\n\n![{spec['alt']}](http://localhost:8000/images/{filename})\n*{spec['caption']}*\n"
+                img_element = f"\n\n![{spec['alt']}]({PUBLIC_BASE_URL}/images/{filename})\n*{spec['caption']}*\n"
                 generated_count += 1
             except Exception as e:
                 logger.warning(f"Image generation failed for '{filename}': {e}")
@@ -344,7 +347,7 @@ def generate_and_place_images(state: State) -> dict:
                 failed_count += 1
                 continue
         else:
-            img_element = f"\n\n![{spec['alt']}](http://localhost:8000/images/{filename})\n*{spec['caption']}*\n"
+            img_element = f"\n\n![{spec['alt']}]({PUBLIC_BASE_URL}/images/{filename})\n*{spec['caption']}*\n"
             generated_count += 1
 
         heading = spec.get("insert_after_heading", "")
