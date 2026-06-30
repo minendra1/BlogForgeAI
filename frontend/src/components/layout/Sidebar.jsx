@@ -1,6 +1,6 @@
-import { BookOpen, Clock, Plus, ChevronRight, Menu } from "lucide-react"; // Swapped X for Menu
+import { BookOpen, Clock, Plus, ChevronRight, Menu, Trash2 } from "lucide-react"; // Added Trash2
 
-export default function Sidebar({ isOpen, setIsOpen, history, onLoadItem, onNew }) {
+export default function Sidebar({ isOpen, setIsOpen, history, onLoadItem, onNew, onClearHistory }) {
   return (
     <>
       <aside className={`
@@ -35,9 +35,24 @@ export default function Sidebar({ isOpen, setIsOpen, history, onLoadItem, onNew 
           </div>
 
           <div className="flex-1 overflow-y-auto p-4 pt-0 space-y-1">
-            <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3 px-2 flex items-center gap-2">
-              <Clock size={12} /> Recent Generations
-            </h4>
+            <div className="flex items-center justify-between px-2 mb-3">
+              <h4 className="text-xs font-semibold text-slate-500 uppercase tracking-wider flex items-center gap-2">
+                <Clock size={12} /> Recent Generations
+              </h4>
+              {history.length > 0 && (
+                <button 
+                  onClick={() => {
+                    if (window.confirm("Are you sure you want to clear your history?")) {
+                      onClearHistory();
+                    }
+                  }}
+                  className="text-xs text-slate-400 hover:text-red-500 flex items-center gap-1 transition-colors"
+                  title="Clear History"
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </div>
             
             {history.length === 0 ? (
               <p className="text-sm text-slate-400 dark:text-slate-500 px-2 italic">No history yet.</p>

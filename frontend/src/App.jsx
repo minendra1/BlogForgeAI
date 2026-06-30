@@ -19,7 +19,7 @@ export default function App() {
   const { getToken, userId } = useAuth();
   
   // Pass the userId into your hook so history is private to the logged-in user
-  const { history, addToHistory } = useHistory(userId);
+  const { history, addToHistory, clearHistory, getBlogData } = useHistory(userId);
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [topic, setTopic] = useState("");
@@ -61,9 +61,19 @@ export default function App() {
     }
   };
 
-  const loadHistoryItem = (item) => {
-    setBlogResult(item.data);
-    setTopic(item.topic);
+  const loadHistoryItem = async (item) => {
+    // If the data is missing (legacy behavior or just metadata), fetch from IndexedDB
+    let fullData = item.data;
+    if (!fullData) {
+      fullData = await getBlogData(item.id);
+    }
+    
+    if (fullData) {
+      setBlogResult(fullData);
+      setTopic(item.topic);
+    } else {
+      setError("Failed to load blog content from local storage.");
+    }
     if (window.innerWidth < 768) setSidebarOpen(false);
   };
 
@@ -133,6 +143,7 @@ export default function App() {
               history={history} 
               onLoadItem={loadHistoryItem} 
               onNew={startNewGeneration} 
+              onClearHistory={clearHistory}
             />
           </div>
 
