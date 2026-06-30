@@ -1,5 +1,11 @@
-# Secrets
+# Secrets — block all .env variants, allow .env.example templates
 .env
+.env.local
+.env.production
+.env.staging
+.env.development
+.env*.local
+!.env.example
 
 # Python environments and cache
 backend/venv/
