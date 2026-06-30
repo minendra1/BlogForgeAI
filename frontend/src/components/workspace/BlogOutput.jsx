@@ -1,18 +1,15 @@
 import { Download, Printer } from "lucide-react";
+import ReactMarkdown from "react-markdown"; // <-- 1. Import the new parser!
 
 export default function BlogOutput({ result }) {
     if (!result) return null;
 
     // 1. Markdown Download Handler
     const handleDownloadMarkdown = () => {
-        // Create a raw text file in the browser memory
         const blob = new Blob([result.markdown], { type: 'text/markdown' });
         const url = URL.createObjectURL(blob);
-        
-        // Create a hidden link, click it, and destroy it
         const a = document.createElement('a');
         a.href = url;
-        // Generate a clean filename based on the topic (or default to 'blog-generation')
         const fileName = result.topic 
             ? result.topic.replace(/[^a-z0-9]/gi, '-').toLowerCase() 
             : 'blog-generation';
@@ -24,19 +21,15 @@ export default function BlogOutput({ result }) {
         URL.revokeObjectURL(url);
     };
 
-    // 2. PDF Download Handler (Using native print-to-pdf)
+    // 2. PDF Download Handler
     const handlePrint = () => {
         window.print();
     };
 
     return (
-        // Added 'print:shadow-none print:border-none print:p-0' so it looks clean on the PDF page
         <div className="w-full bg-white dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-800/50 p-6 sm:p-10 shadow-sm relative overflow-hidden print:shadow-none print:border-none print:p-0 print:bg-transparent">
             
-            {/* Header section containing badges and our new export buttons */}
             <div className="flex flex-wrap items-center justify-between gap-4 mb-8 print:hidden">
-                
-                {/* Status Badges */}
                 <div className="flex flex-wrap items-center gap-3">
                     <span className="px-3 py-1 bg-emerald-100/80 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 rounded-full text-xs font-semibold border border-emerald-200 dark:border-emerald-800/50 flex items-center gap-1.5">
                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> Execution Complete
@@ -46,7 +39,6 @@ export default function BlogOutput({ result }) {
                     </span>
                 </div>
 
-                {/* Export Buttons */}
                 <div className="flex items-center gap-2">
                     <button
                         onClick={handlePrint}
@@ -68,9 +60,9 @@ export default function BlogOutput({ result }) {
                 </div>
             </div>
             
-            {/* The actual blog content */}
-            <div className="prose dark:prose-invert prose-slate max-w-none whitespace-pre-wrap text-slate-700 dark:text-slate-300">
-                {result.markdown}
+            {/* 2. Wrap the text in <ReactMarkdown> instead of rendering it as raw text! */}
+            <div className="prose dark:prose-invert prose-slate max-w-none text-slate-700 dark:text-slate-300">
+                <ReactMarkdown>{result.markdown}</ReactMarkdown>
             </div>
         </div>
     )

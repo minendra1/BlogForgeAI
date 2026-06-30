@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SignedIn, SignedOut, SignInButton, useAuth } from "@clerk/clerk-react";
 import { Sparkles, Loader2, Terminal, X, Globe, PenTool, Zap } from "lucide-react";
 
@@ -26,6 +26,35 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [blogResult, setBlogResult] = useState(null);
   const [error, setError] = useState(null);
+  
+  // Dynamic Loading State
+  const [loadingStep, setLoadingStep] = useState(0);
+
+  const loadingMessages = [
+    "Initializing agent workflow...",
+    "Planning blog structure...",
+    "Researching live web sources...",
+    "Analyzing data and citations...",
+    "Drafting blog sections...",
+    "Generating visual assets...",
+    "Refining final markdown..."
+  ];
+
+  // Timer to cycle through loading messages
+  useEffect(() => {
+    let interval;
+    if (isLoading) {
+      setLoadingStep(0); // Reset to first message
+      interval = setInterval(() => {
+        setLoadingStep((prev) => {
+          // Stop at the last message if generation takes a long time
+          if (prev === loadingMessages.length - 1) return prev;
+          return prev + 1;
+        });
+      }, 4500); // Change message every 4.5 seconds
+    }
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -55,7 +84,6 @@ export default function App() {
   };
 
   const loadHistoryItem = (item) => {
-    // FIX: Set the result to item.data, which contains the actual markdown and images!
     setBlogResult(item.data);
     setTopic(item.topic);
     if (window.innerWidth < 768) setSidebarOpen(false);
@@ -155,10 +183,38 @@ export default function App() {
                   </div>
                 )}
 
+                {/* DYNAMIC LOADING SCREEN */}
                 {isLoading && (
-                  <div className="w-full bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm rounded-2xl border border-slate-200/50 dark:border-slate-800/50 p-12 text-center animate-pulse mt-8 print:hidden">
-                    <Terminal className="w-10 h-10 mx-auto text-blue-500 mb-4 animate-bounce" />
-                    <p className="text-base font-semibold text-slate-700 dark:text-slate-300">Agents are orchestrating...</p>
+                  <div className="w-full bg-white/50 dark:bg-slate-900/50 backdrop-blur-sm rounded-2xl border border-slate-200/50 dark:border-slate-800/50 p-12 flex flex-col items-center justify-center mt-8 print:hidden">
+                    <div className="relative mb-6">
+                      <div className="absolute inset-0 bg-blue-500 blur-xl opacity-20 rounded-full animate-pulse"></div>
+                      <Terminal className="w-10 h-10 text-blue-500 relative z-10 animate-bounce" />
+                    </div>
+                    
+                    <div className="h-8 overflow-hidden relative w-full max-w-sm flex justify-center">
+                      <p 
+                        key={loadingStep} 
+                        className="text-base font-semibold text-slate-700 dark:text-slate-300 animate-in slide-in-from-bottom-4 fade-in duration-500"
+                      >
+                        {loadingMessages[loadingStep]}
+                      </p>
+                    </div>
+                    
+                    {/* Animated progress dots */}
+                    <div className="flex gap-1.5 mt-4">
+                      {loadingMessages.map((_, idx) => (
+                        <div 
+                          key={idx} 
+                          className={`h-1.5 rounded-full transition-all duration-500 ${
+                            idx === loadingStep 
+                              ? "w-6 bg-blue-500" 
+                              : idx < loadingStep 
+                                ? "w-1.5 bg-blue-500/40" 
+                                : "w-1.5 bg-slate-200 dark:bg-slate-700"
+                          }`}
+                        />
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -173,7 +229,7 @@ export default function App() {
               </div>
             </main>
 
-            {/* Input Bar - Added print:hidden so it doesn't appear on exported PDFs */}
+            {/* Input Bar */}
             <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] max-w-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-2xl p-2 z-50 print:hidden">
               <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-2">
                 <input
