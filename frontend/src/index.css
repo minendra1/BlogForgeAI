@@ -37,3 +37,19 @@ main img {
   border-radius: 0.75rem; /* Keeps the edges looking modern */
   box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); /* Optional: adds a subtle shadow */
 }
+
+/* 
+ * Global Print Fixes 
+ * Single-page React apps often use h-screen and overflow-hidden on the body/root.
+ * This forces the browser print engine to only see 1 page of content.
+ * We must forcefully unconstrain height and overflow during print.
+ */
+@media print {
+  html, body, #root, [class*="h-screen"], [class*="overflow-hidden"], [class*="overflow-y-auto"] {
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    position: static !important;
+  }
+}

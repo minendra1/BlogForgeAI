@@ -23,6 +23,9 @@ from agent.graph import create_app
 
 load_dotenv()
 
+import warnings
+warnings.filterwarnings("ignore", module="langgraph.checkpoint.serde.jsonplus")
+
 # Configure standard logging
 logging.basicConfig(
     level=logging.INFO,

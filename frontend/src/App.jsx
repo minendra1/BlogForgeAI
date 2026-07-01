@@ -176,7 +176,7 @@ export default function App() {
 
       {/* DASHBOARD WORKSPACE (Signed In) */}
       <SignedIn>
-        <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-slate-900/80 dark:to-slate-950 selection:bg-blue-500 selection:text-white transition-colors duration-300">
+        <div className="flex h-screen overflow-hidden bg-gradient-to-br from-slate-50 via-blue-50/30 to-indigo-50/50 dark:from-slate-950 dark:via-slate-900/80 dark:to-slate-950 selection:bg-blue-500 selection:text-white transition-colors duration-300 print:h-auto print:overflow-visible print:bg-transparent">
           
           <div className="print:hidden flex shrink-0">
             <Sidebar 
@@ -190,7 +190,7 @@ export default function App() {
             />
           </div>
 
-          <div className="flex-1 flex flex-col h-screen overflow-hidden relative">
+          <div className="flex-1 flex flex-col h-screen overflow-hidden relative print:h-auto print:overflow-visible print:block">
             <div className="print:hidden">
               <Navbar 
                 darkMode={darkMode} 
@@ -201,7 +201,7 @@ export default function App() {
               />
             </div>
 
-            <main className="flex-1 overflow-y-auto px-4 pb-4 sm:px-8 sm:pb-8 pt-0 print:overflow-visible print:px-0">
+            <main className="flex-1 overflow-y-auto px-4 pb-4 sm:px-8 sm:pb-8 pt-0 print:overflow-visible print:h-auto print:block print:px-0">
               <div className="max-w-4xl mx-auto w-full pb-32 mt-4 sm:mt-8 relative print:pb-0 print:mt-0">
                 
                 {!blogResult && !isLoading && !draftPlan && (
