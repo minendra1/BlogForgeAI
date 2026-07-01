@@ -106,9 +106,10 @@ def route_next(state: State) -> str:
 # -----------------------------
 @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=5), reraise=False)
 def _tavily_search_with_retry(query: str, max_results: int = 5) -> List[dict]:
-    from langchain_tavily import TavilySearchResults
-    tool = TavilySearchResults(max_results=max_results)
-    results = tool.invoke({"query": query})
+    from tavily import TavilyClient
+    client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    response = client.search(query=query, max_results=max_results)
+    results = response.get("results", [])
     out: List[dict] = []
     for r in results or []:
         out.append({
