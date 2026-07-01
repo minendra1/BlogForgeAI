@@ -242,7 +242,10 @@ def worker_node(payload: dict) -> dict:
     evidence = [EvidenceItem(**e) for e in payload.get("evidence", [])]
 
     bullets_text = "\n- " + "\n- ".join(task.bullets)
-    evidence_text = "\n".join(f"- {e.title} | {e.url} | {e.published_at or 'date:unknown'}" for e in evidence[:20])
+    evidence_text = "\n".join(
+        f"- {e.title} | {e.url} | {e.published_at or 'date:unknown'}\n  Context: {e.snippet}" 
+        for e in evidence[:20]
+    )
 
     try:
         @llm_retry
