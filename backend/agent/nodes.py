@@ -106,9 +106,10 @@ def route_next(state: State) -> str:
 # -----------------------------
 @retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=5), reraise=False)
 def _tavily_search_with_retry(query: str, max_results: int = 5) -> List[dict]:
-    from langchain_tavily import TavilySearchResults
-    tool = TavilySearchResults(max_results=max_results)
-    results = tool.invoke({"query": query})
+    from tavily import TavilyClient
+    client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    response = client.search(query=query, max_results=max_results)
+    results = response.get("results", [])
     out: List[dict] = []
     for r in results or []:
         out.append({
@@ -154,22 +155,25 @@ def research_node(state: State) -> dict:
         logger.info("No raw search results found, returning empty evidence.")
         return {"evidence": []}
 
-    try:
-        @llm_retry
-        def _extract_evidence():
-            llm = get_llm(state.get("temperature", 0.7))
-            extractor = llm.with_structured_output(EvidencePack)
-            return extractor.invoke([
-                SystemMessage(content=RESEARCH_SYSTEM),
-                HumanMessage(content=f"As-of date: {state['as_of']}\nRecency days: {state['recency_days']}\n\nRaw results:\n{raw}"),
-            ])
+    # Skip the brittle LLM extraction step and process the raw results directly
+    pack_evidence = []
+    for r in raw:
+        if r.get("url"):
+            # Normalize date if possible
+            date_str = r.get("published_at")
+            if date_str and len(date_str) >= 10:
+                try:
+                    # just verify it looks somewhat like a date
+                    date.fromisoformat(date_str[:10])
+                    r["published_at"] = date_str[:10]
+                except Exception:
+                    r["published_at"] = None
+            else:
+                r["published_at"] = None
+                
+            pack_evidence.append(EvidenceItem(**r))
 
-        pack = _extract_evidence()
-    except Exception as e:
-        logger.warning(f"Research LLM extraction failed after retries, returning empty evidence: {e}")
-        return {"evidence": []}
-
-    dedup = {e.url: e for e in pack.evidence if e.url}
+    dedup = {e.url: e for e in pack_evidence if e.url}
     evidence = list(dedup.values())
 
     if state.get("mode") == "open_book":
@@ -233,7 +237,7 @@ def fanout(state: State):
 WORKER_SYSTEM = """You are a senior technical writer and developer advocate.
 Write ONE section of a technical blog post in Markdown.
 Constraints: Cover ALL bullets in order. Target words ±15%. Output only section markdown starting with "## <Section Title>".
-If mode=="open_book", cite provided Evidence URLs as Markdown links ([Source](URL)).
+When Evidence is provided, you MUST naturally embed 1-2 relevant Markdown links from the Evidence URLs into the text of the section to provide proper citations (e.g., [relevant concept](URL)).
 """
 
 def worker_node(payload: dict) -> dict:
@@ -241,7 +245,10 @@ def worker_node(payload: dict) -> dict:
     evidence = [EvidenceItem(**e) for e in payload.get("evidence", [])]
 
     bullets_text = "\n- " + "\n- ".join(task.bullets)
-    evidence_text = "\n".join(f"- {e.title} | {e.url} | {e.published_at or 'date:unknown'}" for e in evidence[:20])
+    evidence_text = "\n".join(
+        f"- {e.title} | {e.url} | {e.published_at or 'date:unknown'}\n  Context: {e.snippet}" 
+        for e in evidence[:20]
+    )
 
     try:
         @llm_retry
