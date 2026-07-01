@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { BookOpen, Clock, Plus, ChevronRight, Menu, Trash2, Search } from "lucide-react"; // Added Trash2, Search
 
-export default function Sidebar({ isOpen, setIsOpen, history, onLoadItem, onNew, onClearHistory }) {
+export default function Sidebar({ isOpen, setIsOpen, history, onLoadItem, onNew, onClearHistory, isGenerating }) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredHistory = history.filter(item => 
@@ -35,7 +35,15 @@ export default function Sidebar({ isOpen, setIsOpen, history, onLoadItem, onNew,
           </div>
 
           <div className="p-4">
-            <button onClick={onNew} className="w-full flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-medium transition-all shadow-md shadow-blue-500/10 active:scale-[0.98]">
+            <button 
+              onClick={onNew} 
+              disabled={isGenerating}
+              className={`w-full flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium transition-all shadow-md active:scale-[0.98] ${
+                isGenerating 
+                  ? "bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-500 shadow-none cursor-not-allowed" 
+                  : "bg-blue-600 hover:bg-blue-700 text-white shadow-blue-500/10"
+              }`}
+            >
               <Plus size={18} />
               <span>New Generation</span>
             </button>
@@ -80,8 +88,17 @@ export default function Sidebar({ isOpen, setIsOpen, history, onLoadItem, onNew,
               </p>
             ) : (
               filteredHistory.map((item) => (
-                <button key={item.id} onClick={() => onLoadItem(item)} className="w-full text-left px-3 py-2.5 rounded-xl hover:bg-white dark:hover:bg-slate-900/80 border border-transparent hover:border-slate-200 dark:hover:border-slate-800/60 transition-all group flex flex-col gap-1">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-200 truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">{item.title}</span>
+                <button 
+                  key={item.id} 
+                  onClick={() => onLoadItem(item)} 
+                  disabled={isGenerating}
+                  className={`w-full text-left px-3 py-2.5 rounded-xl border border-transparent flex flex-col gap-1 transition-all group ${
+                    isGenerating
+                      ? "opacity-50 cursor-not-allowed"
+                      : "hover:bg-white dark:hover:bg-slate-900/80 hover:border-slate-200 dark:hover:border-slate-800/60"
+                  }`}
+                >
+                  <span className={`text-sm font-medium truncate ${isGenerating ? "text-slate-500 dark:text-slate-400" : "text-slate-700 dark:text-slate-200 group-hover:text-blue-600 dark:group-hover:text-blue-400"}`}>{item.title}</span>
                   <span className="text-xs text-slate-400 truncate flex items-center gap-1"><ChevronRight size={12} /> {item.topic}</span>
                 </button>
               ))

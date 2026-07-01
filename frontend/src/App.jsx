@@ -100,6 +100,8 @@ export default function App() {
   };
 
   const loadHistoryItem = async (item) => {
+    if (isLoading || draftPlan) return;
+    
     // If the data is missing (legacy behavior or just metadata), fetch from IndexedDB
     let fullData = item.data;
     if (!fullData) {
@@ -116,6 +118,8 @@ export default function App() {
   };
 
   const startNewGeneration = () => {
+    if (isLoading || draftPlan) return;
+    
     setBlogResult(null);
     setTopic("");
     if (window.innerWidth < 768) setSidebarOpen(false);
@@ -182,6 +186,7 @@ export default function App() {
               onLoadItem={loadHistoryItem} 
               onNew={startNewGeneration} 
               onClearHistory={clearHistory}
+              isGenerating={isLoading || !!draftPlan}
             />
           </div>
 
