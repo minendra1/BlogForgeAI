@@ -39,12 +39,13 @@ llm_retry = retry(
 )
 
 # -----------------------------
-# LLM Initialization (Groq Mixtral)
+# LLM Initialization Factory
 # -----------------------------
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.7,
-)
+def get_llm(temperature: float = 0.7):
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=temperature,
+    )
 
 # -----------------------------
 # Router Logic
@@ -66,6 +67,7 @@ def router_node(state: State) -> dict:
     try:
         @llm_retry
         def _invoke_router():
+            llm = get_llm(state.get("temperature", 0.7))
             decider = llm.with_structured_output(RouterDecision)
             return decider.invoke([
                 SystemMessage(content=ROUTER_SYSTEM),
@@ -155,6 +157,7 @@ def research_node(state: State) -> dict:
     try:
         @llm_retry
         def _extract_evidence():
+            llm = get_llm(state.get("temperature", 0.7))
             extractor = llm.with_structured_output(EvidencePack)
             return extractor.invoke([
                 SystemMessage(content=RESEARCH_SYSTEM),
@@ -197,6 +200,7 @@ def orchestrator_node(state: State) -> dict:
 
     @llm_retry
     def _invoke_planner():
+        llm = get_llm(state.get("temperature", 0.7))
         planner = llm.with_structured_output(Plan)
         return planner.invoke([
             SystemMessage(content=ORCH_SYSTEM),
@@ -217,6 +221,7 @@ def fanout(state: State):
     return [
         Send("worker", {
             "task": task.model_dump(), "topic": state["topic"], "mode": state["mode"], 
+            "temperature": state.get("temperature", 0.7),
             "as_of": state["as_of"], "recency_days": state["recency_days"], 
             "plan": state["plan"].model_dump(), "evidence": [e.model_dump() for e in state.get("evidence", [])]
         }) for task in state["plan"].tasks
@@ -241,6 +246,7 @@ def worker_node(payload: dict) -> dict:
     try:
         @llm_retry
         def _write_section():
+            llm = get_llm(payload.get("temperature", 0.7))
             return llm.invoke([
                 SystemMessage(content=WORKER_SYSTEM),
                 HumanMessage(content=(
@@ -282,6 +288,7 @@ def decide_images(state: State) -> dict:
     try:
         @llm_retry
         def _plan_images():
+            llm = get_llm(state.get("temperature", 0.7))
             planner = llm.with_structured_output(GlobalImagePlan)
             return planner.invoke([
                 SystemMessage(content=DECIDE_IMAGES_SYSTEM),

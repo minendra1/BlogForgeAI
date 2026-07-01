@@ -59,6 +59,7 @@ class GlobalImagePlan(BaseModel):
 # -----------------------------
 class State(TypedDict):
     topic: str
+    temperature: float
     mode: str
     needs_research: bool
     queries: List[str]

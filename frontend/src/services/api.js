@@ -64,8 +64,55 @@ export const generateBlogStream = async (topic, token, onProgress) => {
 
       if (data.type === "progress") {
         onProgress({ step: data.step, total: data.total, message: data.message });
+      } else if (data.type === "interrupt") {
+        return { type: "interrupt", thread_id: data.thread_id, plan: data.plan };
       } else if (data.type === "complete") {
-        return data.data;
+        return { type: "complete", data: data.data };
+      } else if (data.type === "error") {
+        throw new Error(data.message || "Generation failed.");
+      }
+    }
+  }
+
+  throw new Error("Stream ended unexpectedly.");
+};
+
+export const resumeBlogStream = async (thread_id, plan, token, onProgress) => {
+  const response = await fetch(`${API_BASE}/api/generate/resume`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    },
+    body: JSON.stringify({ thread_id, plan }),
+  });
+
+  if (!response.ok) {
+    throw new Error("Failed to reach the backend.");
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const parts = buffer.split("\n\n");
+    buffer = parts.pop();
+
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith("data: ")) continue;
+
+      const data = JSON.parse(line.slice(6));
+
+      if (data.type === "progress") {
+        onProgress({ step: data.step, total: data.total, message: data.message });
+      } else if (data.type === "complete") {
+        return { type: "complete", data: data.data };
       } else if (data.type === "error") {
         throw new Error(data.message || "Generation failed.");
       }

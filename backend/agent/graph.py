@@ -60,4 +60,5 @@ g.add_edge("worker", "reducer")
 g.add_edge("reducer", END)
 
 # Compile the final executable application
-app = g.compile()
+def create_app(checkpointer=None):
+    return g.compile(checkpointer=checkpointer, interrupt_before=["worker"])
