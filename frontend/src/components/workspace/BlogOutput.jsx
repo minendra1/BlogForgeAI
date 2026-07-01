@@ -1,7 +1,12 @@
-import { Download, Printer } from "lucide-react";
-import ReactMarkdown from "react-markdown"; // <-- 1. Import the new parser!
+import { useState } from "react";
+import { Download, Printer, Copy, Check } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import vscDarkPlus from 'react-syntax-highlighter/dist/cjs/styles/prism/vsc-dark-plus';
 
 export default function BlogOutput({ result }) {
+    const [copied, setCopied] = useState(false);
+
     if (!result) return null;
 
     // 1. Markdown Download Handler
@@ -26,6 +31,17 @@ export default function BlogOutput({ result }) {
         window.print();
     };
 
+    // 3. Copy to Clipboard Handler
+    const handleCopy = async () => {
+        try {
+            await navigator.clipboard.writeText(result.markdown);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch (err) {
+            console.error("Failed to copy text: ", err);
+        }
+    };
+
     return (
         <div className="w-full bg-white dark:bg-slate-900/40 rounded-2xl border border-slate-200 dark:border-slate-800/50 p-6 sm:p-10 shadow-sm relative overflow-hidden print:shadow-none print:border-none print:p-0 print:bg-transparent">
             
@@ -40,6 +56,15 @@ export default function BlogOutput({ result }) {
                 </div>
 
                 <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleCopy}
+                        className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium border border-slate-200 dark:border-slate-700"
+                        title="Copy Markdown"
+                    >
+                        {copied ? <Check size={16} className="text-emerald-500" /> : <Copy size={16} />}
+                        <span className="hidden sm:inline">{copied ? "Copied!" : "Copy"}</span>
+                    </button>
+
                     <button
                         onClick={handlePrint}
                         className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-200 dark:hover:bg-slate-800 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium border border-slate-200 dark:border-slate-700"
@@ -60,9 +85,37 @@ export default function BlogOutput({ result }) {
                 </div>
             </div>
             
-            {/* 2. Wrap the text in <ReactMarkdown> instead of rendering it as raw text! */}
+            {/* 2. Wrap the text in <ReactMarkdown> with a custom code renderer for syntax highlighting */}
             <div className="prose dark:prose-invert prose-slate max-w-none text-slate-700 dark:text-slate-300">
-                <ReactMarkdown>{result.markdown}</ReactMarkdown>
+                <ReactMarkdown
+                    components={{
+                        code({ node, inline, className, children, ...props }) {
+                            const match = /language-(\w+)/.exec(className || '');
+                            return !inline && match ? (
+                                <div className="rounded-xl overflow-hidden my-4 border border-slate-700/50 shadow-xl">
+                                    <div className="bg-[#1e1e1e] text-slate-400 text-xs px-4 py-1.5 font-mono border-b border-slate-700/50 flex items-center justify-between">
+                                        <span>{match[1]}</span>
+                                    </div>
+                                    <SyntaxHighlighter
+                                        {...props}
+                                        style={vscDarkPlus}
+                                        language={match[1]}
+                                        PreTag="div"
+                                        customStyle={{ margin: 0, padding: '1.25rem', background: '#1e1e1e', fontSize: '0.9rem' }}
+                                    >
+                                        {String(children).replace(/\n$/, '')}
+                                    </SyntaxHighlighter>
+                                </div>
+                            ) : (
+                                <code {...props} className={`${className || ''} bg-slate-100 dark:bg-slate-800 text-pink-600 dark:text-pink-400 px-1.5 py-0.5 rounded-md text-sm font-mono`}>
+                                    {children}
+                                </code>
+                            );
+                        }
+                    }}
+                >
+                    {result.markdown}
+                </ReactMarkdown>
             </div>
         </div>
     )

@@ -5,12 +5,13 @@ import { Sparkles, Loader2, Terminal, X, Globe, PenTool, Zap } from "lucide-reac
 // Modular Hooks & Services
 import { useTheme } from './hooks/useTheme';
 import { useHistory } from './hooks/useHistory';
-import { generateBlogStream } from './services/api';
+import { generateBlogStream, resumeBlogStream } from './services/api';
 
 // Modular Components
 import Sidebar from './components/layout/Sidebar';
 import Navbar from './components/layout/Navbar';
 import BlogOutput from './components/workspace/BlogOutput';
+import PlanReviewer from './components/workspace/PlanReviewer';
 
 export default function App() {
   const [darkMode, setDarkMode] = useTheme();
@@ -19,13 +20,17 @@ export default function App() {
   const { getToken, userId } = useAuth();
   
   // Pass the userId into your hook so history is private to the logged-in user
-  const { history, addToHistory } = useHistory(userId);
+  const { history, addToHistory, clearHistory, getBlogData } = useHistory(userId);
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [topic, setTopic] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [blogResult, setBlogResult] = useState(null);
   const [error, setError] = useState(null);
+  
+  // HITL States
+  const [draftPlan, setDraftPlan] = useState(null);
+  const [threadId, setThreadId] = useState(null);
   
   // Dynamic Loading State (driven by real-time SSE events from the backend)
   const [loadingProgress, setLoadingProgress] = useState(null);
@@ -40,30 +45,73 @@ export default function App() {
     setIsLoading(true);
     setError(null);
     setBlogResult(null);
+    setDraftPlan(null);
+    setThreadId(null);
     setLoadingProgress({ step: 0, total: 7, message: "Initializing agent workflow..." });
 
     try {
       const token = await getToken();
       if (!token) throw new Error("Authentication error. Please sign in again.");
 
-      const data = await generateBlogStream(currentTopic, token, (progress) => {
+      const result = await generateBlogStream(currentTopic, token, (progress) => {
         setLoadingProgress(progress);
       });
       
-      setBlogResult(data);
-      addToHistory(currentTopic, data);
+      if (result.type === "interrupt") {
+        setThreadId(result.thread_id);
+        setDraftPlan(result.plan);
+        setIsLoading(false); // Pause loading screen to show PlanReviewer
+      } else {
+        setBlogResult(result.data);
+        addToHistory(currentTopic, result.data);
+        setIsLoading(false);
+      }
     } catch (err) {
       setError(err.message);
       setTopic(currentTopic); 
+      setIsLoading(false);
+    } finally {
+      setLoadingProgress(null);
+    }
+  };
+
+  const handleResumeGeneration = async (approvedPlan) => {
+    setIsLoading(true);
+    setError(null);
+    setDraftPlan(null); // Hide the reviewer
+    setLoadingProgress({ step: 4, total: 7, message: "Resuming workflow..." });
+
+    try {
+      const token = await getToken();
+      const result = await resumeBlogStream(threadId, approvedPlan, token, (progress) => {
+        setLoadingProgress(progress);
+      });
+      
+      if (result.type === "complete") {
+        setBlogResult(result.data);
+        addToHistory(result.data.title, result.data); // Title might have changed
+      }
+    } catch (err) {
+      setError(err.message);
     } finally {
       setIsLoading(false);
       setLoadingProgress(null);
     }
   };
 
-  const loadHistoryItem = (item) => {
-    setBlogResult(item.data);
-    setTopic(item.topic);
+  const loadHistoryItem = async (item) => {
+    // If the data is missing (legacy behavior or just metadata), fetch from IndexedDB
+    let fullData = item.data;
+    if (!fullData) {
+      fullData = await getBlogData(item.id);
+    }
+    
+    if (fullData) {
+      setBlogResult(fullData);
+      setTopic(item.topic);
+    } else {
+      setError("Failed to load blog content from local storage.");
+    }
     if (window.innerWidth < 768) setSidebarOpen(false);
   };
 
@@ -133,6 +181,7 @@ export default function App() {
               history={history} 
               onLoadItem={loadHistoryItem} 
               onNew={startNewGeneration} 
+              onClearHistory={clearHistory}
             />
           </div>
 
@@ -150,14 +199,31 @@ export default function App() {
             <main className="flex-1 overflow-y-auto px-4 pb-4 sm:px-8 sm:pb-8 pt-0 print:overflow-visible print:px-0">
               <div className="max-w-4xl mx-auto w-full pb-32 mt-4 sm:mt-8 relative print:pb-0 print:mt-0">
                 
-                {!blogResult && !isLoading && (
+                {!blogResult && !isLoading && !draftPlan && (
                   <div className="text-center max-w-2xl mx-auto mb-10 mt-10 animate-in fade-in duration-700 print:hidden">
                     <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-2xl flex items-center justify-center mx-auto mb-6 transform rotate-3">
                       <Sparkles size={32} />
                     </div>
-                    <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-4 text-slate-900 dark:text-white">
+                    <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight mb-6 text-slate-900 dark:text-white">
                       What are we writing today?
                     </h2>
+                    
+                    <div className="flex flex-wrap justify-center gap-2 max-w-xl mx-auto">
+                      {[
+                        "How Agentic AI differs from standard LLMs", 
+                        "Beginner's guide to Vite vs Webpack", 
+                        "The future of React Server Components",
+                        "Building robust microservices in Python"
+                      ].map((suggestion) => (
+                        <button
+                          key={suggestion}
+                          onClick={() => setTopic(suggestion)}
+                          className="text-xs sm:text-sm px-4 py-2 rounded-full border border-slate-200 dark:border-slate-700/60 bg-white/50 dark:bg-slate-800/50 text-slate-600 dark:text-slate-300 hover:bg-blue-50 hover:text-blue-600 hover:border-blue-200 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 dark:hover:border-blue-800/50 transition-colors"
+                        >
+                          {suggestion}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 )}
 
@@ -194,6 +260,19 @@ export default function App() {
                       ))}
                     </div>
                   </div>
+                )}
+                
+                {/* HITL Plan Reviewer */}
+                {draftPlan && !isLoading && (
+                    <PlanReviewer 
+                        plan={draftPlan}
+                        onApprove={handleResumeGeneration}
+                        onCancel={() => {
+                            setDraftPlan(null);
+                            setThreadId(null);
+                            setLoadingProgress(null);
+                        }}
+                    />
                 )}
 
                 {error && (

@@ -1,16 +1,15 @@
 import os
 import re
-import requests
+import logging
 from datetime import date, timedelta
 from pathlib import Path
 from typing import List, Optional
-from fastapi.staticfiles import StaticFiles
 
 from langchain_groq import ChatGroq
 from langchain_core.messages import SystemMessage, HumanMessage
 from langgraph.types import Send
 from dotenv import load_dotenv
-from langchain_community.tools.tavily_search import TavilySearchResults
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 import urllib.request
 import urllib.parse
@@ -23,13 +22,30 @@ from agent.state import (
 
 load_dotenv()
 
+logger = logging.getLogger("blogforge.agent")
+
+# Base URL for serving static assets (images) — configurable for deployment
+PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:8000")
+
 # -----------------------------
-# LLM Initialization (Groq Mixtral)
+# Retry Decorator for LLM Calls
 # -----------------------------
-llm = ChatGroq(
-    model="llama-3.3-70b-versatile",
-    temperature=0.7,
+# Retries up to 3 times with exponential backoff (1s, 2s, 4s)
+# Catches generic Exceptions (rate limits, timeouts, malformed output)
+llm_retry = retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    reraise=True,
 )
+
+# -----------------------------
+# LLM Initialization Factory
+# -----------------------------
+def get_llm(temperature: float = 0.7):
+    return ChatGroq(
+        model="llama-3.3-70b-versatile",
+        temperature=temperature,
+    )
 
 # -----------------------------
 # Router Logic
@@ -48,12 +64,25 @@ If needs_research=true:
 """
 
 def router_node(state: State) -> dict:
-    # Removed method="json_schema" to support Mixtral native tool calling
-    decider = llm.with_structured_output(RouterDecision)
-    decision = decider.invoke([
-        SystemMessage(content=ROUTER_SYSTEM),
-        HumanMessage(content=f"Topic: {state['topic']}\nAs-of date: {state['as_of']}"),
-    ])
+    try:
+        @llm_retry
+        def _invoke_router():
+            llm = get_llm(state.get("temperature", 0.7))
+            decider = llm.with_structured_output(RouterDecision)
+            return decider.invoke([
+                SystemMessage(content=ROUTER_SYSTEM),
+                HumanMessage(content=f"Topic: {state['topic']}\nAs-of date: {state['as_of']}"),
+            ])
+
+        decision = _invoke_router()
+    except Exception as e:
+        logger.warning(f"Router LLM failed after retries, defaulting to closed_book: {e}")
+        return {
+            "needs_research": False,
+            "mode": "closed_book",
+            "queries": [],
+            "recency_days": 3650,
+        }
 
     if decision.mode == "open_book":
         recency_days = 7
@@ -75,25 +104,29 @@ def route_next(state: State) -> str:
 # -----------------------------
 # Research Logic (Tavily)
 # -----------------------------
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(min=1, max=5), reraise=False)
+def _tavily_search_with_retry(query: str, max_results: int = 5) -> List[dict]:
+    from langchain_tavily import TavilySearchResults
+    tool = TavilySearchResults(max_results=max_results)
+    results = tool.invoke({"query": query})
+    out: List[dict] = []
+    for r in results or []:
+        out.append({
+            "title": r.get("title") or "",
+            "url": r.get("url") or "",
+            "snippet": r.get("content") or r.get("snippet") or "",
+            "published_at": r.get("published_date") or r.get("published_at"),
+            "source": r.get("source"),
+        })
+    return out
+
 def _tavily_search(query: str, max_results: int = 5) -> List[dict]:
     if not os.getenv("TAVILY_API_KEY"):
         return []
     try:
-        from langchain_tavily import TavilySearchResults
-        
-        tool = TavilySearchResults(max_results=max_results)
-        results = tool.invoke({"query": query})
-        out: List[dict] = []
-        for r in results or []:
-            out.append({
-                "title": r.get("title") or "",
-                "url": r.get("url") or "",
-                "snippet": r.get("content") or r.get("snippet") or "",
-                "published_at": r.get("published_date") or r.get("published_at"),
-                "source": r.get("source"),
-            })
-        return out
-    except Exception:
+        return _tavily_search_with_retry(query, max_results)
+    except Exception as e:
+        logger.warning(f"Tavily search failed for query '{query}': {e}")
         return []
 
 def _iso_to_date(s: Optional[str]) -> Optional[date]:
@@ -118,14 +151,23 @@ def research_node(state: State) -> dict:
         raw.extend(_tavily_search(q, max_results=6))
 
     if not raw:
+        logger.info("No raw search results found, returning empty evidence.")
         return {"evidence": []}
 
-    # Removed method="json_schema"
-    extractor = llm.with_structured_output(EvidencePack)
-    pack = extractor.invoke([
-        SystemMessage(content=RESEARCH_SYSTEM),
-        HumanMessage(content=f"As-of date: {state['as_of']}\nRecency days: {state['recency_days']}\n\nRaw results:\n{raw}"),
-    ])
+    try:
+        @llm_retry
+        def _extract_evidence():
+            llm = get_llm(state.get("temperature", 0.7))
+            extractor = llm.with_structured_output(EvidencePack)
+            return extractor.invoke([
+                SystemMessage(content=RESEARCH_SYSTEM),
+                HumanMessage(content=f"As-of date: {state['as_of']}\nRecency days: {state['recency_days']}\n\nRaw results:\n{raw}"),
+            ])
+
+        pack = _extract_evidence()
+    except Exception as e:
+        logger.warning(f"Research LLM extraction failed after retries, returning empty evidence: {e}")
+        return {"evidence": []}
 
     dedup = {e.url: e for e in pack.evidence if e.url}
     evidence = list(dedup.values())
@@ -152,28 +194,34 @@ Grounding:
 """
 
 def orchestrator_node(state: State) -> dict:
-    # Removed method="json_schema"
-    planner = llm.with_structured_output(Plan)
     mode = state.get("mode", "closed_book")
     evidence = state.get("evidence", [])
     forced_kind = "news_roundup" if mode == "open_book" else None
 
-    plan = planner.invoke([
-        SystemMessage(content=ORCH_SYSTEM),
-        HumanMessage(content=(
-            f"Topic: {state['topic']}\nMode: {mode}\nAs-of: {state['as_of']} (recency_days={state['recency_days']})\n"
-            f"{'Force blog_kind=news_roundup' if forced_kind else ''}\n\nEvidence:\n{[e.model_dump() for e in evidence][:16]}"
-        )),
-    ])
+    @llm_retry
+    def _invoke_planner():
+        llm = get_llm(state.get("temperature", 0.7))
+        planner = llm.with_structured_output(Plan)
+        return planner.invoke([
+            SystemMessage(content=ORCH_SYSTEM),
+            HumanMessage(content=(
+                f"Topic: {state['topic']}\nMode: {mode}\nAs-of: {state['as_of']} (recency_days={state['recency_days']})\n"
+                f"{'Force blog_kind=news_roundup' if forced_kind else ''}\n\nEvidence:\n{[e.model_dump() for e in evidence][:16]}"
+            )),
+        ])
+
+    plan = _invoke_planner()  # Critical node — let it raise after retries
     if forced_kind:
         plan.blog_kind = "news_roundup"
     return {"plan": plan}
 
 def fanout(state: State):
-    assert state["plan"] is not None
+    if state["plan"] is None:
+        raise ValueError("Plan must be generated before fanout — orchestrator_node likely failed.")
     return [
         Send("worker", {
             "task": task.model_dump(), "topic": state["topic"], "mode": state["mode"], 
+            "temperature": state.get("temperature", 0.7),
             "as_of": state["as_of"], "recency_days": state["recency_days"], 
             "plan": state["plan"].model_dump(), "evidence": [e.model_dump() for e in state.get("evidence", [])]
         }) for task in state["plan"].tasks
@@ -195,15 +243,26 @@ def worker_node(payload: dict) -> dict:
     bullets_text = "\n- " + "\n- ".join(task.bullets)
     evidence_text = "\n".join(f"- {e.title} | {e.url} | {e.published_at or 'date:unknown'}" for e in evidence[:20])
 
-    section_md = llm.invoke([
-        SystemMessage(content=WORKER_SYSTEM),
-        HumanMessage(content=(
-            f"Blog title: {plan.blog_title}\nAudience: {plan.audience}\nTone: {plan.tone}\n"
-            f"Section title: {task.title}\nGoal: {task.goal}\nTarget words: {task.target_words}\n"
-            f"requires_research: {task.requires_research}\nrequires_citations: {task.requires_citations}\n"
-            f"Bullets:{bullets_text}\n\nEvidence:\n{evidence_text}\n"
-        )),
-    ]).content.strip()
+    try:
+        @llm_retry
+        def _write_section():
+            llm = get_llm(payload.get("temperature", 0.7))
+            return llm.invoke([
+                SystemMessage(content=WORKER_SYSTEM),
+                HumanMessage(content=(
+                    f"Blog title: {plan.blog_title}\nAudience: {plan.audience}\nTone: {plan.tone}\n"
+                    f"Section title: {task.title}\nGoal: {task.goal}\nTarget words: {task.target_words}\n"
+                    f"requires_research: {task.requires_research}\nrequires_citations: {task.requires_citations}\n"
+                    f"Bullets:{bullets_text}\n\nEvidence:\n{evidence_text}\n"
+                )),
+            ]).content.strip()
+
+        section_md = _write_section()
+    except Exception as e:
+        logger.warning(f"Worker failed for section '{task.title}' after retries: {e}")
+        # Return a placeholder so the blog still renders with partial content
+        bullet_list = "\n".join(f"- {b}" for b in task.bullets)
+        section_md = f"## {task.title}\n\n*This section could not be generated. Key points to cover:*\n\n{bullet_list}\n"
 
     return {"sections": [(task.id, section_md)]}
 
@@ -226,25 +285,34 @@ CRITICAL CONSTRAINTS:
 """
 
 def decide_images(state: State) -> dict:
-    # Removed method="json_schema"
-    planner = llm.with_structured_output(GlobalImagePlan)
-    image_plan = planner.invoke([
-        SystemMessage(content=DECIDE_IMAGES_SYSTEM),
-        HumanMessage(content=f"Blog kind: {state['plan'].blog_kind}\nTopic: {state['topic']}\n\nContent:\n{state['merged_md']}"),
-    ])
-    return {
-        "image_specs": [img.model_dump() for img in image_plan.images],
-    }
+    try:
+        @llm_retry
+        def _plan_images():
+            llm = get_llm(state.get("temperature", 0.7))
+            planner = llm.with_structured_output(GlobalImagePlan)
+            return planner.invoke([
+                SystemMessage(content=DECIDE_IMAGES_SYSTEM),
+                HumanMessage(content=f"Blog kind: {state['plan'].blog_kind}\nTopic: {state['topic']}\n\nContent:\n{state['merged_md']}"),
+            ])
 
-def _gemini_generate_image_bytes(prompt: str) -> bytes:
+        image_plan = _plan_images()
+        return {
+            "image_specs": [img.model_dump() for img in image_plan.images],
+        }
+    except Exception as e:
+        logger.warning(f"Image planning failed after retries, skipping images: {e}")
+        return {"image_specs": []}
+
+@retry(stop=stop_after_attempt(2), wait=wait_exponential(min=2, max=8), reraise=True)
+def _generate_image_bytes(prompt: str) -> bytes:
     """
-    Uses Pollinations.ai to bypass Hugging Face network blocks. No API key required.
+    Uses Pollinations.ai for image generation. Retries once on failure.
     """
     safe_prompt = urllib.parse.quote(prompt)
     url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=1024&nologo=true"
     
     req = urllib.request.Request(url, headers={'User-Agent': 'BlogForgeAI/1.0'})
-    with urllib.request.urlopen(req) as response:
+    with urllib.request.urlopen(req, timeout=60) as response:
         return response.read()
 
 def _safe_slug(title: str) -> str:
@@ -268,19 +336,26 @@ def generate_and_place_images(state: State) -> dict:
     images_dir = Path("images")
     images_dir.mkdir(exist_ok=True)
 
+    generated_count = 0
+    failed_count = 0
+
     for spec in image_specs:
         filename = spec["filename"]
         out_path = images_dir / filename
         
-        # Updated image syntax to leverage absolute FastAPI static routing URL
         if not out_path.exists():
             try:
-                out_path.write_bytes(_gemini_generate_image_bytes(spec["prompt"]))
-                img_element = f"\n\n![{spec['alt']}](http://localhost:8000/images/{filename})\n*{spec['caption']}*\n"
+                out_path.write_bytes(_generate_image_bytes(spec["prompt"]))
+                img_element = f"\n\n![{spec['alt']}]({PUBLIC_BASE_URL}/images/{filename})\n*{spec['caption']}*\n"
+                generated_count += 1
             except Exception as e:
-                img_element = f"\n\n![{spec['alt']}](http://localhost:8000/images/{filename})\n*{spec['caption']}*\n"
+                logger.warning(f"Image generation failed for '{filename}': {e}")
+                # Skip this image entirely instead of inserting a broken reference
+                failed_count += 1
+                continue
         else:
-            img_element = f"\n\n![{spec['alt']}](http://localhost:8000/images/{filename})\n*{spec['caption']}*\n"
+            img_element = f"\n\n![{spec['alt']}]({PUBLIC_BASE_URL}/images/{filename})\n*{spec['caption']}*\n"
+            generated_count += 1
 
         heading = spec.get("insert_after_heading", "")
         if heading and heading in md:
@@ -288,6 +363,7 @@ def generate_and_place_images(state: State) -> dict:
         else:
             md += f"\n\n{img_element}"
 
+    logger.info(f"Images: {generated_count} generated, {failed_count} failed.")
     final_path.write_text(md, encoding="utf-8")
     
     return {"final": md}
