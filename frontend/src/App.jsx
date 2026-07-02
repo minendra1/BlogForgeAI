@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SignedIn, SignedOut, SignInButton, useAuth } from "@clerk/clerk-react";
 import { Sparkles, Loader2, Terminal, X, Globe, PenTool, Zap } from "lucide-react";
 
@@ -35,6 +35,32 @@ export default function App() {
   // Dynamic Loading State (driven by real-time SSE events from the backend)
   const [loadingProgress, setLoadingProgress] = useState(null);
 
+  // --- Browser Back Button Support ---
+  // Listen for browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const state = event.state;
+      if (state?.view === 'blog') {
+        // User pressed forward to a blog view (unlikely, but handle it)
+      } else {
+        // User pressed back — go to the home/input screen
+        setBlogResult(null);
+        setDraftPlan(null);
+        setThreadId(null);
+        setError(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Push initial state so we have something to go "back" to
+    if (!window.history.state?.view) {
+      window.history.replaceState({ view: 'home' }, '');
+    }
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
   const handleGenerate = async (e) => {
     e.preventDefault();
     if (!topic.trim()) return;
@@ -64,6 +90,7 @@ export default function App() {
       } else {
         setBlogResult(result.data);
         addToHistory(currentTopic, result.data);
+        window.history.pushState({ view: 'blog' }, '');
         setIsLoading(false);
       }
     } catch (err) {
@@ -90,6 +117,7 @@ export default function App() {
       if (result.type === "complete") {
         setBlogResult(result.data);
         addToHistory(result.data.title, result.data); // Title might have changed
+        window.history.pushState({ view: 'blog' }, '');
       }
     } catch (err) {
       setError(err.message);
@@ -111,6 +139,7 @@ export default function App() {
     if (fullData) {
       setBlogResult(fullData);
       setTopic(item.topic);
+      window.history.pushState({ view: 'blog' }, '');
     } else {
       setError("Failed to load blog content from local storage.");
     }
