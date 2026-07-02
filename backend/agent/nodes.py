@@ -181,6 +181,11 @@ def research_node(state: State) -> dict:
         cutoff = as_of - timedelta(days=int(state["recency_days"]))
         evidence = [e for e in evidence if (d := _iso_to_date(e.published_at)) and d >= cutoff]
 
+    # Capping global evidence to 6 items. 
+    # Because we are now including full text snippets, passing dozens of search results 
+    # to multiple concurrent workers instantly blows through Groq's 100k Tokens-Per-Day free tier limit.
+    evidence = evidence[:6]
+
     return {"evidence": evidence}
 
 # -----------------------------
