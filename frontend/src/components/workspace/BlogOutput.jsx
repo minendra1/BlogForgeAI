@@ -89,6 +89,19 @@ export default function BlogOutput({ result }) {
             <div className="prose dark:prose-invert prose-slate max-w-none text-slate-700 dark:text-slate-300">
                 <ReactMarkdown
                     components={{
+                        a({ href, children, ...props }) {
+                            return (
+                                <a 
+                                    href={href} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="text-blue-600 dark:text-blue-400 underline decoration-blue-400/50 dark:decoration-blue-500/50 underline-offset-2 hover:text-blue-700 dark:hover:text-blue-300 hover:decoration-blue-500 transition-colors font-medium"
+                                    {...props}
+                                >
+                                    {children} ↗
+                                </a>
+                            );
+                        },
                         code({ node, inline, className, children, ...props }) {
                             const match = /language-(\w+)/.exec(className || '');
                             return !inline && match ? (

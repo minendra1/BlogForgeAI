@@ -51,15 +51,16 @@ def get_llm(temperature: float = 0.7):
 # Router Logic
 # -----------------------------
 ROUTER_SYSTEM = """You are a routing module for a technical blog planner.
-Decide whether web research is needed BEFORE planning.
+Decide the appropriate research mode BEFORE planning.
 
 Modes:
-- closed_book (needs_research=false): evergreen concepts.
-- hybrid (needs_research=true): evergreen + needs up-to-date examples/tools/models.
+- hybrid (needs_research=true): evergreen concepts + needs up-to-date examples/tools/models.
 - open_book (needs_research=true): volatile weekly/news/"latest"/pricing/policy.
 
+CRITICAL: You MUST set needs_research=true for EVERY topic. We always want citations and links in the final blog. Do NOT use closed_book mode.
+
 If needs_research=true:
-- Output 3–10 high-signal, scoped queries.
+- Output 3–6 high-signal, scoped queries.
 - For open_book weekly roundup, include queries reflecting last 7 days.
 """
 
@@ -76,25 +77,27 @@ def router_node(state: State) -> dict:
 
         decision = _invoke_router()
     except Exception as e:
-        logger.warning(f"Router LLM failed after retries, defaulting to closed_book: {e}")
+        logger.warning(f"Router LLM failed after retries, defaulting to hybrid: {e}")
         return {
-            "needs_research": False,
-            "mode": "closed_book",
-            "queries": [],
-            "recency_days": 3650,
+            "needs_research": True,
+            "mode": "hybrid",
+            "queries": [state['topic']],
+            "recency_days": 45,
         }
 
     if decision.mode == "open_book":
         recency_days = 7
-    elif decision.mode == "hybrid":
-        recency_days = 45
     else:
-        recency_days = 3650
+        recency_days = 45
+
+    # GUARANTEE research happens so we always have links to cite
+    queries = decision.queries if decision.queries else [state['topic']]
+    mode = decision.mode if decision.mode != "closed_book" else "hybrid"
 
     return {
-        "needs_research": decision.needs_research,
-        "mode": decision.mode,
-        "queries": decision.queries,
+        "needs_research": True,
+        "mode": mode,
+        "queries": queries,
         "recency_days": recency_days,
     }
 
@@ -147,9 +150,12 @@ Rules:
 
 def research_node(state: State) -> dict:
     queries = (state.get("queries") or [])[:10]
+    logger.info(f"RESEARCH: Starting with {len(queries)} queries: {queries}")
     raw: List[dict] = []
     for q in queries:
         raw.extend(_tavily_search(q, max_results=6))
+
+    logger.info(f"RESEARCH: Got {len(raw)} raw search results")
 
     if not raw:
         logger.info("No raw search results found, returning empty evidence.")
@@ -186,6 +192,7 @@ def research_node(state: State) -> dict:
     # to multiple concurrent workers instantly blows through Groq's 100k Tokens-Per-Day free tier limit.
     evidence = evidence[:6]
 
+    logger.info(f"RESEARCH: Returning {len(evidence)} evidence items. URLs: {[e.url for e in evidence[:3]]}")
     return {"evidence": evidence}
 
 # -----------------------------
@@ -227,12 +234,24 @@ def orchestrator_node(state: State) -> dict:
 def fanout(state: State):
     if state["plan"] is None:
         raise ValueError("Plan must be generated before fanout — orchestrator_node likely failed.")
+    evidence = state.get("evidence", [])
+    logger.info(f"FANOUT: evidence count = {len(evidence)}, mode = {state.get('mode')}, needs_research = {state.get('needs_research')}")
+    if evidence:
+        logger.info(f"FANOUT: first evidence URL = {evidence[0].url if hasattr(evidence[0], 'url') else evidence[0].get('url', 'N/A')}")
+    evidence_dicts = []
+    for e in evidence:
+        if hasattr(e, 'model_dump'):
+            evidence_dicts.append(e.model_dump())
+        elif isinstance(e, dict):
+            evidence_dicts.append(e)
+        else:
+            evidence_dicts.append(dict(e))
     return [
         Send("worker", {
             "task": task.model_dump(), "topic": state["topic"], "mode": state["mode"], 
             "temperature": state.get("temperature", 0.7),
             "as_of": state["as_of"], "recency_days": state["recency_days"], 
-            "plan": state["plan"].model_dump(), "evidence": [e.model_dump() for e in state.get("evidence", [])]
+            "plan": state["plan"].model_dump(), "evidence": evidence_dicts
         }) for task in state["plan"].tasks
     ]
 
@@ -241,19 +260,39 @@ def fanout(state: State):
 # -----------------------------
 WORKER_SYSTEM = """You are a senior technical writer and developer advocate.
 Write ONE section of a technical blog post in Markdown.
-Constraints: Cover ALL bullets in order. Target words ±15%. Output only section markdown starting with "## <Section Title>".
-When Evidence is provided, you MUST naturally embed 1-2 relevant Markdown links from the Evidence URLs into the text of the section to provide proper citations (e.g., [relevant concept](URL)).
+
+CRITICAL RULES:
+1. Cover ALL bullets in order. Target words ±15%.
+2. Output only section markdown starting with "## <Section Title>".
+3. You MUST include inline Markdown hyperlinks from the provided Reference Links in your text.
+   For each section, pick the 1-2 most relevant Reference Links and weave them naturally into sentences.
+   Example: "According to a recent [industry report](https://example.com/report), adoption has grown by 40%."
+4. Do NOT list references at the end. Embed them inline within the paragraph text.
+5. If no Reference Links are provided, write without links.
 """
 
 def worker_node(payload: dict) -> dict:
     task, plan = Task(**payload["task"]), Plan(**payload["plan"])
     evidence = [EvidenceItem(**e) for e in payload.get("evidence", [])]
+    logger.info(f"WORKER '{task.title}': received {len(evidence)} evidence items")
+    if evidence:
+        logger.info(f"WORKER '{task.title}': evidence URLs = {[e.url for e in evidence[:3]]}")
 
     bullets_text = "\n- " + "\n- ".join(task.bullets)
-    evidence_text = "\n".join(
-        f"- {e.title} | {e.url} | {e.published_at or 'date:unknown'}\n  Context: {e.snippet}" 
-        for e in evidence[:20]
-    )
+    
+    # Build a clear, numbered reference list for the AI
+    if evidence:
+        ref_lines = []
+        for i, e in enumerate(evidence[:6], 1):
+            snippet_preview = (e.snippet or "")[:150]
+            ref_lines.append(f"  [{i}] \"{e.title}\" — {e.url}\n      Preview: {snippet_preview}")
+        evidence_block = "\n".join(ref_lines)
+        link_instruction = (
+            f"\n\nReference Links (you MUST use 1-2 of these as inline Markdown links in your text):\n{evidence_block}\n"
+            f"\nREMINDER: Include at least 1 link from the Reference Links above as an inline Markdown hyperlink like [text](url)."
+        )
+    else:
+        link_instruction = ""
 
     try:
         @llm_retry
@@ -264,17 +303,24 @@ def worker_node(payload: dict) -> dict:
                 HumanMessage(content=(
                     f"Blog title: {plan.blog_title}\nAudience: {plan.audience}\nTone: {plan.tone}\n"
                     f"Section title: {task.title}\nGoal: {task.goal}\nTarget words: {task.target_words}\n"
-                    f"requires_research: {task.requires_research}\nrequires_citations: {task.requires_citations}\n"
-                    f"Bullets:{bullets_text}\n\nEvidence:\n{evidence_text}\n"
+                    f"Bullets:{bullets_text}"
+                    f"{link_instruction}\n"
                 )),
             ]).content.strip()
 
         section_md = _write_section()
     except Exception as e:
         logger.warning(f"Worker failed for section '{task.title}' after retries: {e}")
-        # Return a placeholder so the blog still renders with partial content
         bullet_list = "\n".join(f"- {b}" for b in task.bullets)
         section_md = f"## {task.title}\n\n*This section could not be generated. Key points to cover:*\n\n{bullet_list}\n"
+
+    # FALLBACK: If the AI still didn't include any links, programmatically append them
+    if evidence and "](http" not in section_md:
+        logger.info(f"Worker for '{task.title}': AI did not embed links, appending fallback references.")
+        fallback_links = []
+        for e in evidence[:2]:
+            fallback_links.append(f"- [{e.title}]({e.url})")
+        section_md += "\n\n**Further Reading:**\n" + "\n".join(fallback_links) + "\n"
 
     return {"sections": [(task.id, section_md)]}
 
