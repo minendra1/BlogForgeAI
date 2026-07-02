@@ -221,7 +221,9 @@ def orchestrator_node(state: State) -> dict:
         return planner.invoke([
             SystemMessage(content=ORCH_SYSTEM),
             HumanMessage(content=(
-                f"Topic: {state['topic']}\nMode: {mode}\nAs-of: {state['as_of']} (recency_days={state['recency_days']})\n"
+                f"Topic: {state['topic']}\n"
+                f"Tone Preset: {state.get('tone_preset', 'Balanced')}\n"
+                f"Mode: {mode}\nAs-of: {state['as_of']} (recency_days={state['recency_days']})\n"
                 f"{'Force blog_kind=news_roundup' if forced_kind else ''}\n\nEvidence:\n{[e.model_dump() for e in evidence][:16]}"
             )),
         ])
