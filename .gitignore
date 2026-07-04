@@ -1,5 +1,11 @@
-# Secrets
+# Secrets — block all .env variants, allow .env.example templates
 .env
+.env.local
+.env.production
+.env.staging
+.env.development
+.env*.local
+!.env.example
 
 # Python environments and cache
 backend/venv/
@@ -9,32 +15,3 @@ __pycache__/
 # Frontend
 frontend/node_modules/
 .DS_Store
-
-# Environment files
-.env
-.env.local
-*.env
-
-# Python virtual environment
-venv/
-backend/venv/
-
-# Python cache
-__pycache__/
-*.pyc
-
-# Node modules
-node_modules/
-
-# Generated blogs
-backend/blogs/
-
-# Generated images
-backend/images/
-
-# Logs
-*.log
-
-# OS files
-.DS_Store
-Thumbs.db
