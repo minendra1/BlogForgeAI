@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SignedIn, SignedOut, SignInButton, useAuth } from "@clerk/clerk-react";
 import { Sparkles, Loader2, Terminal, X, Globe, PenTool, Zap } from "lucide-react";
 
@@ -24,6 +24,7 @@ export default function App() {
   
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [topic, setTopic] = useState("");
+  const [tone, setTone] = useState("Balanced");
   const [isLoading, setIsLoading] = useState(false);
   const [blogResult, setBlogResult] = useState(null);
   const [error, setError] = useState(null);
@@ -34,6 +35,32 @@ export default function App() {
   
   // Dynamic Loading State (driven by real-time SSE events from the backend)
   const [loadingProgress, setLoadingProgress] = useState(null);
+
+  // --- Browser Back Button Support ---
+  // Listen for browser back/forward navigation
+  useEffect(() => {
+    const handlePopState = (event) => {
+      const state = event.state;
+      if (state?.view === 'blog') {
+        // User pressed forward to a blog view (unlikely, but handle it)
+      } else {
+        // User pressed back — go to the home/input screen
+        setBlogResult(null);
+        setDraftPlan(null);
+        setThreadId(null);
+        setError(null);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    
+    // Push initial state so we have something to go "back" to
+    if (!window.history.state?.view) {
+      window.history.replaceState({ view: 'home' }, '');
+    }
+
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   const handleGenerate = async (e) => {
     e.preventDefault();
@@ -53,7 +80,7 @@ export default function App() {
       const token = await getToken();
       if (!token) throw new Error("Authentication error. Please sign in again.");
 
-      const result = await generateBlogStream(currentTopic, token, (progress) => {
+      const result = await generateBlogStream(currentTopic, tone, token, (progress) => {
         setLoadingProgress(progress);
       });
       
@@ -64,6 +91,7 @@ export default function App() {
       } else {
         setBlogResult(result.data);
         addToHistory(currentTopic, result.data);
+        window.history.pushState({ view: 'blog' }, '');
         setIsLoading(false);
       }
     } catch (err) {
@@ -90,6 +118,7 @@ export default function App() {
       if (result.type === "complete") {
         setBlogResult(result.data);
         addToHistory(result.data.title, result.data); // Title might have changed
+        window.history.pushState({ view: 'blog' }, '');
       }
     } catch (err) {
       setError(err.message);
@@ -111,6 +140,7 @@ export default function App() {
     if (fullData) {
       setBlogResult(fullData);
       setTopic(item.topic);
+      window.history.pushState({ view: 'blog' }, '');
     } else {
       setError("Failed to load blog content from local storage.");
     }
@@ -287,30 +317,58 @@ export default function App() {
                   </div>
                 )}
 
-                <BlogOutput result={blogResult} />
+                <BlogOutput 
+                  result={blogResult} 
+                  onUpdateMarkdown={(newMd) => {
+                    setBlogResult(prev => ({ ...prev, markdown: newMd }));
+                  }}
+                />
               </div>
             </main>
 
             {/* Input Bar */}
-            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] max-w-3xl bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl rounded-2xl border border-slate-200/60 dark:border-slate-800/60 shadow-2xl p-2 z-50 print:hidden">
-              <form onSubmit={handleGenerate} className="flex flex-col sm:flex-row gap-2">
+            <div className="absolute bottom-6 left-1/2 transform -translate-x-1/2 w-[calc(100%-2rem)] max-w-3xl bg-white dark:bg-[#1a1c23] shadow-[0_8px_30px_rgb(0,0,0,0.12)] dark:shadow-[0_8px_30px_rgba(0,0,0,0.4)] rounded-2xl border border-slate-200 dark:border-slate-800/80 p-1.5 z-50 print:hidden flex flex-col sm:flex-row gap-2 transition-all hover:shadow-[0_8px_30px_rgb(0,0,0,0.16)]">
+              <div className="flex flex-1 items-center relative pl-4 rounded-xl transition-colors">
                 <input
                   type="text"
                   value={topic}
                   onChange={(e) => setTopic(e.target.value)}
-                  placeholder="e.g., Guide to vector databases in 2024"
-                  className="flex-1 bg-transparent px-4 py-3 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none text-base border-none ring-0"
+                  placeholder="e.g., The complete guide to vector databases"
+                  className="flex-1 bg-transparent py-3.5 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none text-[15px] border-none ring-0 min-w-0"
                   disabled={isLoading}
                 />
-                <button
-                  type="submit"
-                  disabled={isLoading || !topic.trim()}
-                  className="bg-blue-600 text-white px-6 py-3 rounded-xl font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md shadow-blue-500/20 whitespace-nowrap"
-                >
-                  {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
-                  <span className="hidden sm:inline">{isLoading ? "Generating..." : "Generate"}</span>
-                </button>
-              </form>
+                
+                <div className="hidden sm:block h-6 w-px bg-slate-200 dark:bg-slate-700/60 mx-3"></div>
+                
+                <div className="relative flex items-center mr-1">
+                  <select
+                    value={tone}
+                    onChange={(e) => setTone(e.target.value)}
+                    disabled={isLoading}
+                    className="appearance-none bg-transparent hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 pl-3 pr-8 py-2 rounded-lg text-sm font-medium focus:outline-none transition-colors cursor-pointer outline-none w-28 sm:w-auto"
+                  >
+                    <option value="Balanced">Balanced</option>
+                    <option value="Technical">Technical</option>
+                    <option value="Casual">Casual</option>
+                    <option value="Marketing">Marketing</option>
+                    <option value="Academic">Academic</option>
+                    <option value="Storytelling">Storytelling</option>
+                  </select>
+                  <div className="absolute right-2 pointer-events-none text-slate-400 dark:text-slate-500">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleGenerate}
+                disabled={isLoading || !topic.trim()}
+                className="bg-blue-600 text-white px-6 py-3.5 rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-sm whitespace-nowrap"
+              >
+                {isLoading ? <Loader2 size={18} className="animate-spin" /> : <Sparkles size={18} />}
+                <span className="hidden sm:inline">{isLoading ? "Generating..." : "Generate"}</span>
+              </button>
             </div>
 
           </div>

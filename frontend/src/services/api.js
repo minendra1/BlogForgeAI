@@ -30,14 +30,14 @@ export const generateBlog = async (topic, token) => {
  * Calls onProgress({ step, total, message }) for each pipeline step.
  * Returns the final blog data on completion.
  */
-export const generateBlogStream = async (topic, token, onProgress) => {
+export const generateBlogStream = async (topic, tone, token, onProgress) => {
   const response = await fetch(`${API_BASE}/api/generate/stream`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${token}`
     },
-    body: JSON.stringify({ topic }),
+    body: JSON.stringify({ topic, tone }),
   });
 
   if (!response.ok) {

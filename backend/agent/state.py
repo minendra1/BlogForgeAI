@@ -60,6 +60,7 @@ class GlobalImagePlan(BaseModel):
 class State(TypedDict):
     topic: str
     temperature: float
+    tone_preset: str
     mode: str
     needs_research: bool
     queries: List[str]
