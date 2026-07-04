@@ -30,7 +30,6 @@ BlogForgeAI uses a **LangGraph state machine** with parallel worker agents to pr
 - [Frontend Components](#-frontend-components)
 - [Data Persistence](#-data-persistence)
 - [Configuration Reference](#-configuration-reference)
-- [License](#-license)
 
 ---
 
@@ -663,12 +662,6 @@ All LLM calls use **Tenacity** retry logic:
 - **Backoff:** Exponential (1s → 2s → 4s, capped at 10s)
 - **Tavily searches:** 2 attempts with exponential backoff (1s → 5s)
 - **Image generation:** 2 attempts with exponential backoff (2s → 8s)
-
----
-
-## 📄 License
-
-This project is open source and available under the [MIT License](LICENSE).
 
 ---
 
