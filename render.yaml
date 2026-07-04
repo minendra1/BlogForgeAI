@@ -1,0 +1,44 @@
+# ============================================
+# BlogForgeAI — Render Blueprint (IaC)
+# ============================================
+# Deploy with one click: https://render.com/deploy
+# Or connect your GitHub repo and Render auto-detects this file.
+# ============================================
+
+services:
+  # --- Backend API (FastAPI + LangGraph) ---
+  - type: web
+    name: blogforgeai-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    plan: free
+    region: oregon
+
+    # Health check — Render uses this to verify the service is alive
+    healthCheckPath: /docs
+
+    envVars:
+      # LLM Provider
+      - key: GROQ_API_KEY
+        sync: false  # Must be set manually in Render dashboard
+
+      # Web Search
+      - key: TAVILY_API_KEY
+        sync: false
+
+      # Authentication (Clerk PEM Public Key)
+      - key: CLERK_PEM_PUBLIC_KEY
+        sync: false
+
+      # PostgreSQL (Neon connection string)
+      - key: DATABASE_URL
+        sync: false
+
+      # Public URL for serving images (set to your Render service URL)
+      - key: PUBLIC_BASE_URL
+        sync: false
+
+      # CORS — set to your Vercel frontend URL
+      - key: CORS_ORIGINS
+        sync: false

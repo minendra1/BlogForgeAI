@@ -30,6 +30,7 @@ BlogForgeAI uses a **LangGraph state machine** with parallel worker agents to pr
 - [Frontend Components](#-frontend-components)
 - [Data Persistence](#-data-persistence)
 - [Configuration Reference](#-configuration-reference)
+- [Deployment Guide](#-deployment-guide)
 - [License](#-license)
 
 ---
@@ -663,6 +664,113 @@ All LLM calls use **Tenacity** retry logic:
 - **Backoff:** Exponential (1s → 2s → 4s, capped at 10s)
 - **Tavily searches:** 2 attempts with exponential backoff (1s → 5s)
 - **Image generation:** 2 attempts with exponential backoff (2s → 8s)
+
+---
+
+## 🌐 Deployment Guide
+
+Deploy BlogForgeAI for free using **Render** (backend) + **Vercel** (frontend) + **Neon** (database).
+
+### Step 1 — Set Up Neon PostgreSQL (Free Database)
+
+1. Go to [neon.tech](https://neon.tech) and sign up.
+2. Create a new project (e.g., `blogforge`).
+3. Copy the **connection string** from the dashboard. It looks like:
+   ```
+   postgresql://user:password@ep-xxx.us-east-2.aws.neon.tech/blogforge?sslmode=require
+   ```
+4. Save this — you'll need it for the Render backend.
+
+### Step 2 — Deploy Backend on Render
+
+1. Push your code to a **GitHub** repository.
+2. Go to [render.com](https://render.com) → **Dashboard** → **New** → **Web Service**.
+3. Connect your GitHub repo.
+4. Configure the service:
+
+   | Setting | Value |
+   |---|---|
+   | **Name** | `blogforgeai-api` |
+   | **Region** | Oregon (US West) |
+   | **Runtime** | Docker |
+   | **Dockerfile Path** | `./backend/Dockerfile` |
+   | **Docker Context** | `./backend` |
+   | **Instance Type** | Free |
+
+5. Add **Environment Variables** in the Render dashboard:
+
+   | Variable | Value |
+   |---|---|
+   | `GROQ_API_KEY` | Your Groq API key |
+   | `TAVILY_API_KEY` | Your Tavily API key |
+   | `CLERK_PEM_PUBLIC_KEY` | Your Clerk PEM public key (full block with newlines) |
+   | `DATABASE_URL` | Your Neon connection string from Step 1 |
+   | `PUBLIC_BASE_URL` | `https://blogforgeai-api.onrender.com` (your Render URL) |
+   | `CORS_ORIGINS` | `https://your-app.vercel.app` (your Vercel URL — set after Step 3) |
+
+6. Click **Create Web Service**. Render will build the Docker image and deploy.
+7. Note your backend URL: `https://blogforgeai-api.onrender.com`
+
+> **💡 Tip:** On the free tier, the service sleeps after 15 minutes of inactivity. The first request after sleep takes ~50 seconds to cold-start.
+
+### Step 3 — Deploy Frontend on Vercel
+
+1. Go to [vercel.com](https://vercel.com) → **New Project** → Import your GitHub repo.
+2. Configure the project:
+
+   | Setting | Value |
+   |---|---|
+   | **Framework Preset** | Vite |
+   | **Root Directory** | `frontend` |
+   | **Build Command** | `npm run build` |
+   | **Output Directory** | `dist` |
+
+3. Add **Environment Variables**:
+
+   | Variable | Value |
+   |---|---|
+   | `VITE_CLERK_PUBLISHABLE_KEY` | Your Clerk publishable key |
+   | `VITE_API_URL` | `https://blogforgeai-api.onrender.com` (your Render URL from Step 2) |
+
+4. Click **Deploy**.
+5. Note your frontend URL: `https://your-app.vercel.app`
+
+### Step 4 — Update CORS on Render
+
+Go back to your Render dashboard and update the `CORS_ORIGINS` environment variable:
+
+```
+https://your-app.vercel.app
+```
+
+Render will automatically redeploy with the updated CORS setting.
+
+### Step 5 — Configure Clerk for Production
+
+1. Go to your [Clerk Dashboard](https://dashboard.clerk.com).
+2. Under **Domains**, add your Vercel frontend URL (`https://your-app.vercel.app`).
+3. Make sure JWT templates are configured for your production domain.
+
+### Post-Deployment Checklist
+
+- [ ] Neon database created and connection string saved
+- [ ] Render backend deployed and health check passing (`/docs` returns 200)
+- [ ] Vercel frontend deployed and loading the sign-in page
+- [ ] `CORS_ORIGINS` on Render points to your Vercel URL
+- [ ] `VITE_API_URL` on Vercel points to your Render URL
+- [ ] `PUBLIC_BASE_URL` on Render matches your Render URL
+- [ ] Clerk production domain configured
+- [ ] End-to-end test: generate a blog and verify images load
+
+### ⚠️ Production Notes
+
+| Concern | Detail |
+|---|---|
+| **Cold Starts** | Render free tier sleeps after 15 min of inactivity. First request takes ~50s. Consider upgrading to Render Starter ($7/mo) for always-on. |
+| **Ephemeral Filesystem** | Generated images in `backend/images/` are lost on redeploy. Images persist while the service is running and are embedded via URL in the blog markdown. For persistent images, consider uploading to Cloudinary or S3. |
+| **Neon Free Limits** | 0.5 GB storage, 190 compute hours/month. More than sufficient for LangGraph checkpoints. |
+| **Groq Free Limits** | The free tier has token-per-day limits. Evidence is capped at 6 items to stay within budget. |
+| **Vercel Free Limits** | 100 GB bandwidth/month, unlimited deploys. More than enough for a personal project. |
 
 ---
 
