@@ -10,7 +10,7 @@ services:
   - type: web
     name: blogforgeai-api
     runtime: docker
-    dockerfilePath: ./backend/Dockerfile
+    dockerfilePath: ./Dockerfile
     dockerContext: ./backend
     plan: free
     region: oregon
