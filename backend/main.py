@@ -64,12 +64,11 @@ app = FastAPI(title="BlogForgeAI Orchestration API", lifespan=lifespan)
 os.makedirs("images", exist_ok=True)
 app.mount("/images", StaticFiles(directory="images"), name="images")
 
-# CORS Middleware (configurable via env for production)
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174").split(",")
+# CORS Middleware (relaxed for Bearer JWT auth)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in CORS_ORIGINS],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
