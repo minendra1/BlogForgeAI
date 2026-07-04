@@ -341,7 +341,7 @@ Analyze the provided blog post content and plan exact images or technical diagra
 CRITICAL CONSTRAINTS:
 1. You MUST plan exactly 2 to 3 images. Returning an empty list or skipping this task is strictly forbidden.
 2. For each image, choose an exact heading string present in the text (e.g., "## Challenges Faced by Indian Businesses in Adopting AI") to insert the image after.
-3. Provide high-quality, descriptive text prompts for generating clean visual graphics (do not use generic descriptions).
+3. Provide high-quality, descriptive text prompts for generating clean visual graphics. IMPORTANT: Ensure prompts request photorealistic, high-resolution, professional photography. Avoid abstract or cartoonish styles.
 """
 
 def decide_images(state: State) -> dict:
@@ -369,9 +369,9 @@ def _generate_image_bytes(prompt: str) -> bytes:
     Uses Pollinations.ai for image generation. Retries once on failure.
     """
     safe_prompt = urllib.parse.quote(prompt)
-    url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=1024&nologo=true"
+    url = f"https://image.pollinations.ai/prompt/{safe_prompt}?width=1024&height=1024&nologo=true&model=flux"
     
-    req = urllib.request.Request(url, headers={'User-Agent': 'BlogForgeAI/1.0'})
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(req, timeout=60) as response:
         return response.read()
 

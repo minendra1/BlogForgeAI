@@ -171,9 +171,21 @@ TOTAL_STEPS = 7
 
 @app.post("/api/generate/stream")
 async def generate_blog_stream(request: BlogRequest, user_id: str = Depends(verify_token)):
+    # Map tone to temperature for the LLM
+    tone_temp_map = {
+        "Technical": 0.2,
+        "Academic": 0.2,
+        "Balanced": 0.7,
+        "Casual": 0.7,
+        "Marketing": 0.8,
+        "Storytelling": 0.9
+    }
+    temperature = tone_temp_map.get(request.tone, 0.7)
+
     initial_state = {
         "topic": request.topic,
-        "temperature": request.temperature,
+        "temperature": temperature,
+        "tone_preset": request.tone,
         "as_of": str(date.today()),
         "mode": "",
         "needs_research": False,
