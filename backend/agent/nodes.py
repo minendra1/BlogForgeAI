@@ -43,7 +43,7 @@ llm_retry = retry(
 # -----------------------------
 def get_llm(temperature: float = 0.7):
     return ChatGroq(
-        model="llama-3.3-70b-versatile",
+        model="qwen/qwen3.8-27b",
         temperature=temperature,
     )
 
